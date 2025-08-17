@@ -1,0 +1,70 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script>{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1 class="text-3xl font-bold mb-6">Добре дошли, {{ user }}!</h1>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    {% if role == 'admin' %}
+    <a href="{{ url_for('products') }}" class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg">
+        <h2 class="text-xl font-semibold">Управление на продукти</h2>
+        <p class="text-gray-600">Управлявайте продукти и размери</p>
+    </a>
+    {% endif %}
+    <a href="{{ url_for('measurements') }}" class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg">
+        <h2 class="text-xl font-semibold">Въвеждане на измервания</h2>
+        <p class="text-gray-600">Въведете данни за измервания</p>
+    </a>
+    <a href="{{ url_for('recent_measurements') }}" class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg">
+        <h2 class="text-xl font-semibold">Последни измервания</h2>
+        <p class="text-gray-600">Вижте последните 10 измервания за всички продукти</p>
+    </a>
+    <a href="{{ url_for('reports') }}" class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg">
+        <h2 class="text-xl font-semibold">Справки и анализи</h2>
+        <p class="text-gray-600">Генерирайте и експортирайте справки</p>
+    </a>
+    {% if role == 'admin' %}
+    <a href="{{ url_for('users') }}" class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg">
+        <h2 class="text-xl font-semibold">Управление на потребители</h2>
+        <p class="text-gray-600">Управлявайте потребителски акаунти</p>
+    </a>
+    {% endif %}
+</div>
+{% endblock %}

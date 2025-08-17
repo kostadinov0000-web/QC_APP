@@ -1,0 +1,694 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script>{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4">Управление на продукти</h1>
+
+    {% if role == 'admin' %}
+    <!-- Add Product Form -->
+    <form method="POST" class="mb-6 bg-white p-4 rounded shadow">
+        <input type="hidden" name="action" value="add_product">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label for="product_name" class="block text-sm font-medium text-gray-700">Име на продукт</label>
+                <input type="text" id="product_name" name="product_name" required
+                       class="mt-1 block w-full border-2 border-gray-400 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div>
+                <label for="drawing_number" class="block text-sm font-medium text-gray-700">Номер на чертеж</label>
+                <input type="text" id="drawing_number" name="drawing_number" required
+                       class="mt-1 block w-full border-2 border-gray-400 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div>
+                <label for="drawing_path" class="block text-sm font-medium text-gray-700">Път до чертеж (основен)</label>
+                <div class="flex space-x-2">
+                    <select id="drawing_path" name="drawing_path"
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Без чертеж</option>
+                        <!-- Options populated by JavaScript -->
+                    </select>
+                    <button type="button" onclick="openUploadModal(1)" 
+                            class="mt-1 bg-green-500 text-white px-3 py-2 rounded hover:bg-green-600 text-sm">Качи чертеж</button>
+                </div>
+            </div>
+            <div>
+                <label for="drawing_path_2" class="block text-sm font-medium text-gray-700">Път до чертеж (втори, по избор)</label>
+                <div class="flex space-x-2">
+                    <select id="drawing_path_2" name="drawing_path_2"
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Без чертеж</option>
+                        <!-- Options populated by JavaScript -->
+                    </select>
+                    <button type="button" onclick="openUploadModal(2)" 
+                            class="mt-1 bg-green-500 text-white px-3 py-2 rounded hover:bg-green-600 text-sm">Качи чертеж</button>
+                </div>
+            </div>
+        </div>
+        <button type="submit" class="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Добави продукт</button>
+    </form>
+    {% endif %}
+
+    <!-- Products Table -->
+    <div class="bg-white p-4 rounded shadow">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Име на продукт</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Номер на чертеж</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Път до чертеж</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Коментари</th>
+                    {% if role == 'admin' %}
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Действия</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for product in products %}
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ product.id }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <a href="#" onclick="showDimensionsModal({{ product.id }}, '{{ product.product_name | escape }}')"
+                           class="text-blue-600 hover:underline">{{ product.product_name }}</a>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ product.drawing_number }}</td>
+                    <td class="px-6 py-4 break-all text-sm text-gray-500">
+                        {% if product.drawing_path %}
+                            <div class="mb-1">
+                                <span>{{ product.drawing_path }}</span>
+                                <a href="/{{ product.drawing_path }}" target="_blank" class="ml-2 text-blue-600 hover:underline">Download</a>
+                                <button type="button" class="ml-2 text-yellow-600 hover:text-yellow-800 text-xs" onclick="openReplaceModal({{ product.id }}, '{{ product.drawing_path }}', 1)">Replace</button>
+                                <button type="button" class="ml-2 text-red-600 hover:text-red-800 text-xs" onclick="deleteDrawing({{ product.id }}, '{{ product.drawing_path }}', this, 1)">Delete</button>
+                            </div>
+                        {% endif %}
+                        {% if product.drawing_path_2 %}
+                            <div>
+                                <span>{{ product.drawing_path_2 }}</span>
+                                <a href="/{{ product.drawing_path_2 }}" target="_blank" class="ml-2 text-blue-600 hover:underline">Download</a>
+                                <button type="button" class="ml-2 text-yellow-600 hover:text-yellow-800 text-xs" onclick="openReplaceModal({{ product.id }}, '{{ product.drawing_path_2 }}', 2)">Replace</button>
+                                <button type="button" class="ml-2 text-red-600 hover:text-red-800 text-xs" onclick="deleteDrawing({{ product.id }}, '{{ product.drawing_path_2 }}', this, 2)">Delete</button>
+                            </div>
+                        {% endif %}
+                        {% if not product.drawing_path and not product.drawing_path_2 %}
+                            None
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <span class="product-comment">{{ product.comments or 'Няма коментари' }}</span>
+                        {% if role == 'admin' %}
+                        <button onclick="editComment({{ product.id }}, this)" class="ml-2 text-blue-600 hover:text-blue-800 text-xs">Редактирай</button>
+                        <div class="comment-edit-form hidden mt-2">
+                            <textarea class="w-full border rounded px-2 py-1 text-sm" rows="3" placeholder="Въведете коментар...">{{ product.comments or '' }}</textarea>
+                            <div class="mt-2">
+                                <button onclick="saveComment({{ product.id }}, this)" class="text-green-600 hover:text-green-800 text-xs mr-2">Запази</button>
+                                <button onclick="cancelCommentEdit(this)" class="text-gray-600 hover:text-gray-800 text-xs">Отказ</button>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </td>
+                    {% if role == 'admin' %}
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <form method="POST" class="inline">
+                            <input type="hidden" name="action" value="delete_product">
+                            <input type="hidden" name="product_id" value="{{ product.id }}">
+                            <button type="submit" onclick="return confirm('Изтриване на този продукт?')"
+                                    class="text-red-600 hover:text-red-800">Изтрий</button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    <!-- Dimensions Modal -->
+    <div id="dimensionsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded shadow-lg w-full max-w-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h2 id="modalProductName" class="text-xl font-bold"></h2>
+                <button onclick="closeDimensionsModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+            </div>
+            <!-- Add Dimension Form -->
+            <form id="addDimensionForm" class="mb-4">
+                <input type="hidden" id="productId" name="product_id">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label for="dimension_name" class="block text-sm font-medium text-gray-700">Име на размер</label>
+                        <input type="text" id="dimension_name" name="dimension_name" required
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="nominal_value" class="block text-sm font-medium text-gray-700">Номинална стойност</label>
+                        <input type="number" step="any" id="nominal_value" name="nominal_value" required
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="tolerance_minus" class="block text-sm font-medium text-gray-700">Толеранс -</label>
+                        <input type="number" step="any" id="tolerance_minus" name="tolerance_minus" required
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="tolerance_plus" class="block text-sm font-medium text-gray-700">Толеранс +</label>
+                        <input type="number" step="any" id="tolerance_plus" name="tolerance_plus" required
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+                <button type="submit" class="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Добави размер</button>
+            </form>
+            <!-- Dimensions Table -->
+            <div class="overflow-x-auto">
+                <table id="dimensionsTable" class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Име на размер</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Номинална стойност</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Толеранс -</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Толеранс +</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Действия</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <!-- Populated by JavaScript -->
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Drawing Modal -->
+    <div id="uploadModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Качи чертеж</h2>
+                <button onclick="closeUploadModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+            </div>
+            <form id="uploadForm" enctype="multipart/form-data" class="space-y-4">
+                <div>
+                    <label for="drawing_file" class="block text-sm font-medium text-gray-700">Изберете PDF файл</label>
+                    <input type="file" id="drawing_file" name="drawing_file" accept=".pdf" required
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <p class="mt-1 text-sm text-gray-500">Само PDF файлове са позволени</p>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" onclick="closeUploadModal()" 
+                            class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Отказ</button>
+                    <button type="submit" 
+                            class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Качи</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Replace Drawing Modal -->
+    <div id="replaceModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Replace Drawing</h2>
+                <button onclick="closeReplaceModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+            </div>
+            <form id="replaceForm" enctype="multipart/form-data" class="space-y-4">
+                <input type="hidden" id="replace_product_id" name="product_id">
+                <div>
+                    <label for="replace_drawing_file" class="block text-sm font-medium text-gray-700">Select New PDF File</label>
+                    <input type="file" id="replace_drawing_file" name="drawing_file" accept=".pdf" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <p class="mt-1 text-sm text-gray-500">Only PDF files are allowed</p>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" onclick="closeReplaceModal()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Cancel</button>
+                    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Replace</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const drawingPathSelect = document.getElementById('drawing_path');
+    const drawingPathSelect2 = document.getElementById('drawing_path_2');
+
+    // Function to populate both drawing path dropdowns
+    function populateDrawingPath() {
+        fetch('/get_drawings')
+            .then(response => response.json())
+            .then(pdfFiles => {
+                // Save current values
+                const currentValue = drawingPathSelect.value;
+                const currentValue2 = drawingPathSelect2.value;
+                
+                // Clear and populate first dropdown
+                drawingPathSelect.innerHTML = '<option value="">Без чертеж</option>';
+                pdfFiles.forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = `drawings/${file}`; // Store full path with drawings/ prefix
+                    option.textContent = file; // Display just the filename
+                    if (`drawings/${file}` === currentValue) {
+                        option.selected = true;
+                    }
+                    drawingPathSelect.appendChild(option);
+                });
+                
+                // Clear and populate second dropdown
+                drawingPathSelect2.innerHTML = '<option value="">Без чертеж</option>';
+                pdfFiles.forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = `drawings/${file}`; // Store full path with drawings/ prefix
+                    option.textContent = file; // Display just the filename
+                    if (`drawings/${file}` === currentValue2) {
+                        option.selected = true;
+                    }
+                    drawingPathSelect2.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching PDF files:', error);
+                drawingPathSelect.innerHTML = '<option value="">Error loading PDFs</option>';
+                drawingPathSelect2.innerHTML = '<option value="">Error loading PDFs</option>';
+            });
+    }
+
+    // Initial population
+    populateDrawingPath();
+
+    // Poll every 5 seconds to refresh dropdown
+    setInterval(populateDrawingPath, 5000);
+
+    // Handle add dimension form submission
+    document.getElementById('addDimensionForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        
+        fetch('/add_dimension', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Clear form
+                this.reset();
+                // Reload dimensions
+                loadDimensions(document.getElementById('productId').value);
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error adding dimension');
+        });
+    });
+});
+
+// Show dimensions modal
+function showDimensionsModal(productId, productName) {
+    document.getElementById('modalProductName').textContent = productName;
+    document.getElementById('productId').value = productId;
+    document.getElementById('dimensionsModal').classList.remove('hidden');
+    loadDimensions(productId);
+}
+
+// Close dimensions modal
+function closeDimensionsModal() {
+    document.getElementById('dimensionsModal').classList.add('hidden');
+    document.getElementById('addDimensionForm').reset();
+}
+
+// Load dimensions for a product
+function loadDimensions(productId) {
+    fetch(`/get_dimensions/${productId}`)
+        .then(response => response.json())
+        .then(dimensions => {
+            const tbody = document.querySelector('#dimensionsTable tbody');
+            tbody.innerHTML = '';
+            
+            dimensions.forEach(dim => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${dim.id}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="dimension-name">${dim.dimension_name}</span>
+                        <input type="text" class="dimension-name-edit hidden w-full border rounded px-2 py-1" value="${dim.dimension_name}">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="nominal-value">${dim.nominal_value}</span>
+                        <input type="number" step="any" class="nominal-value-edit hidden w-full border rounded px-2 py-1" value="${dim.nominal_value}">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="tolerance-minus">${dim.tolerance_minus}</span>
+                        <input type="number" step="any" class="tolerance-minus-edit hidden w-full border rounded px-2 py-1" value="${dim.tolerance_minus}">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span class="tolerance-plus">${dim.tolerance_plus}</span>
+                        <input type="number" step="any" class="tolerance-plus-edit hidden w-full border rounded px-2 py-1" value="${dim.tolerance_plus}">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <button onclick="editDimension(${dim.id}, this)" class="text-blue-600 hover:text-blue-800 mr-2 edit-btn">Редактирай</button>
+                        <button onclick="saveDimension(${dim.id}, this)" class="text-green-600 hover:text-green-800 mr-2 save-btn hidden">Запази</button>
+                        <button onclick="cancelEdit(${dim.id}, this)" class="text-gray-600 hover:text-gray-800 mr-2 cancel-btn hidden">Отказ</button>
+                        <button onclick="deleteDimension(${dim.id})" class="text-red-600 hover:text-red-800">Изтрий</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        });
+}
+
+// Edit dimension
+function editDimension(dimensionId, button) {
+    const row = button.closest('tr');
+    
+    // Show edit inputs
+    row.querySelector('.dimension-name').classList.add('hidden');
+    row.querySelector('.dimension-name-edit').classList.remove('hidden');
+    row.querySelector('.nominal-value').classList.add('hidden');
+    row.querySelector('.nominal-value-edit').classList.remove('hidden');
+    row.querySelector('.tolerance-minus').classList.add('hidden');
+    row.querySelector('.tolerance-minus-edit').classList.remove('hidden');
+    row.querySelector('.tolerance-plus').classList.add('hidden');
+    row.querySelector('.tolerance-plus-edit').classList.remove('hidden');
+    
+    // Show/hide buttons
+    button.classList.add('hidden');
+    row.querySelector('.save-btn').classList.remove('hidden');
+    row.querySelector('.cancel-btn').classList.remove('hidden');
+}
+
+// Save dimension
+function saveDimension(dimensionId, button) {
+    const row = button.closest('tr');
+    const formData = new FormData();
+    formData.append('dimension_id', dimensionId);
+    formData.append('dimension_name', row.querySelector('.dimension-name-edit').value);
+    formData.append('nominal_value', row.querySelector('.nominal-value-edit').value);
+    formData.append('tolerance_minus', row.querySelector('.tolerance-minus-edit').value);
+    formData.append('tolerance_plus', row.querySelector('.tolerance-plus-edit').value);
+    
+    fetch('/update_dimension', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Update display values
+            row.querySelector('.dimension-name').textContent = row.querySelector('.dimension-name-edit').value;
+            row.querySelector('.nominal-value').textContent = row.querySelector('.nominal-value-edit').value;
+            row.querySelector('.tolerance-minus').textContent = row.querySelector('.tolerance-minus-edit').value;
+            row.querySelector('.tolerance-plus').textContent = row.querySelector('.tolerance-plus-edit').value;
+            
+            // Hide edit mode
+            cancelEdit(dimensionId, button);
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error updating dimension');
+    });
+}
+
+// Cancel edit
+function cancelEdit(dimensionId, button) {
+    const row = button.closest('tr');
+    
+    // Hide edit inputs
+    row.querySelector('.dimension-name').classList.remove('hidden');
+    row.querySelector('.dimension-name-edit').classList.add('hidden');
+    row.querySelector('.nominal-value').classList.remove('hidden');
+    row.querySelector('.nominal-value-edit').classList.add('hidden');
+    row.querySelector('.tolerance-minus').classList.remove('hidden');
+    row.querySelector('.tolerance-minus-edit').classList.add('hidden');
+    row.querySelector('.tolerance-plus').classList.remove('hidden');
+    row.querySelector('.tolerance-plus-edit').classList.add('hidden');
+    
+    // Show/hide buttons
+    row.querySelector('.edit-btn').classList.remove('hidden');
+    row.querySelector('.save-btn').classList.add('hidden');
+    row.querySelector('.cancel-btn').classList.add('hidden');
+}
+
+// Delete dimension
+function deleteDimension(dimensionId) {
+    if (confirm('Are you sure you want to delete this dimension?')) {
+        const formData = new FormData();
+        formData.append('dimension_id', dimensionId);
+        
+        fetch('/delete_dimension', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Reload dimensions
+                loadDimensions(document.getElementById('productId').value);
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error deleting dimension');
+        });
+    }
+}
+
+// Comment editing functions
+function editComment(productId, button) {
+    const row = button.closest('tr');
+    const commentSpan = row.querySelector('.product-comment');
+    const editForm = row.querySelector('.comment-edit-form');
+    const textarea = editForm.querySelector('textarea');
+    
+    // Show edit form
+    commentSpan.classList.add('hidden');
+    editForm.classList.remove('hidden');
+    textarea.focus();
+}
+
+function saveComment(productId, button) {
+    const row = button.closest('tr');
+    const commentSpan = row.querySelector('.product-comment');
+    const editForm = row.querySelector('.comment-edit-form');
+    const textarea = editForm.querySelector('textarea');
+    const comments = textarea.value.trim();
+    
+    const formData = new FormData();
+    formData.append('product_id', productId);
+    formData.append('comments', comments);
+    
+    fetch('/update_product_comments', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Update display
+            commentSpan.textContent = comments || 'Няма коментари';
+            cancelCommentEdit(button);
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error updating comments');
+    });
+}
+
+function cancelCommentEdit(button) {
+    const row = button.closest('tr');
+    const commentSpan = row.querySelector('.product-comment');
+    const editForm = row.querySelector('.comment-edit-form');
+    
+    // Hide edit form
+    commentSpan.classList.remove('hidden');
+    editForm.classList.add('hidden');
+}
+
+let currentDrawingSlot = 1;
+
+function openUploadModal(slot = 1) {
+    currentDrawingSlot = slot;
+    document.getElementById('uploadModal').classList.remove('hidden');
+    // Set or update the hidden input for drawing_slot
+    let slotInput = document.getElementById('drawing_slot_input');
+    if (!slotInput) {
+        slotInput = document.createElement('input');
+        slotInput.type = 'hidden';
+        slotInput.id = 'drawing_slot_input';
+        slotInput.name = 'drawing_slot';
+        document.getElementById('uploadForm').appendChild(slotInput);
+    }
+    slotInput.value = slot;
+}
+
+function closeUploadModal() {
+    document.getElementById('uploadModal').classList.add('hidden');
+    document.getElementById('uploadForm').reset();
+    // Optionally clear the slot input
+    let slotInput = document.getElementById('drawing_slot_input');
+    if (slotInput) slotInput.value = '';
+}
+
+// Handle file upload
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    // Ensure drawing_slot is included
+    formData.set('drawing_slot', currentDrawingSlot);
+    const fileInput = document.getElementById('drawing_file');
+    
+    if (!fileInput.files[0]) {
+        alert('Please select a file to upload');
+        return;
+    }
+    
+    // Check file type
+    const file = fileInput.files[0];
+    if (!file.type.includes('pdf')) {
+        alert('Only PDF files are allowed');
+        return;
+    }
+    
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        alert('File size must be less than 10MB');
+        return;
+    }
+    
+    fetch('/upload_drawing', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Drawing uploaded successfully!');
+            closeUploadModal();
+            // Refresh the drawing path dropdown
+            populateDrawingPath();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error uploading file');
+    });
+});
+
+function openReplaceModal(productId, drawingPath, drawingSlot = 1) {
+    document.getElementById('replace_product_id').value = productId;
+    document.getElementById('replaceForm').reset();
+    document.getElementById('replaceModal').classList.remove('hidden');
+    
+    // Store the drawing slot for the replace operation
+    let slotInput = document.getElementById('replace_drawing_slot');
+    if (!slotInput) {
+        slotInput = document.createElement('input');
+        slotInput.type = 'hidden';
+        slotInput.id = 'replace_drawing_slot';
+        slotInput.name = 'drawing_slot';
+        document.getElementById('replaceForm').appendChild(slotInput);
+    }
+    slotInput.value = drawingSlot;
+}
+
+function closeReplaceModal() {
+    document.getElementById('replaceModal').classList.add('hidden');
+}
+
+document.getElementById('replaceForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    fetch('/replace_drawing', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Drawing replaced successfully');
+            closeReplaceModal();
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('Error replacing drawing');
+    });
+});
+
+function deleteDrawing(productId, drawingPath, btn, drawingSlot = 1) {
+    if (!confirm('Delete this drawing?')) return;
+    const formData = new FormData();
+    formData.append('product_id', productId);
+    formData.append('drawing_path', drawingPath);
+    formData.append('drawing_slot', drawingSlot); // Use drawing_slot instead of type
+    fetch('/delete_drawing', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Drawing deleted');
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        alert('Error deleting drawing');
+    });
+}
+</script>
+{% endblock %}

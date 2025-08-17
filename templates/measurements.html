@@ -1,0 +1,565 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script>
+<style>
+.fullscreen {
+    transition: all 0.3s ease;
+    z-index: 9999 !important;
+}
+
+#drawingModal .bg-white {
+    transition: all 0.3s ease;
+    box-sizing: border-box;
+    max-width: 1125px;
+    width: 95vw;
+    max-height: 112.5vh;
+    padding: 0;
+    margin: 0;
+    border-radius: 0.75rem;
+    overflow: hidden;
+}
+
+#drawingModal .p-6 {
+    width: 100%;
+    height: auto;
+    padding: 1rem 1.5rem 1.5rem 1.5rem;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+#drawingModal .flex.justify-between {
+    width: 100%;
+    margin-bottom: 0.5rem;
+    align-items: center;
+}
+
+#drawingModal .border-2 {
+    width: 100%;
+    height: 87.5vh;
+    max-height: 87.5vh;
+    min-height: 375px;
+    overflow: auto;
+    box-sizing: border-box;
+    background: #f9f9f9;
+    border-radius: 0.5rem;
+    margin: 0 auto;
+    padding: 0;
+}
+
+#pdfViewer {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    border: none;
+    display: block;
+    box-sizing: border-box;
+    background: #fff;
+}
+
+#drawingModal .scale-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #fff;
+    border-radius: 1rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    border: 1px solid #e5e7eb;
+    padding: 0.25rem 0.75rem;
+}
+#drawingModal .scale-controls button {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: none;
+    border: none;
+    transition: background 0.2s;
+}
+#drawingModal .scale-controls button:hover {
+    background: #f3f4f6;
+}
+#drawingModal .scale-controls svg {
+    width: 20px;
+    height: 20px;
+}
+#zoomDisplay {
+    min-width: 48px;
+    text-align: center;
+}
+
+/* PDF Viewer specific styles */
+#pdfCanvas {
+    display: block;
+    margin: 0 auto;
+}
+
+/* Zoom container for iframe */
+.zoom-container {
+    overflow: auto;
+    position: relative;
+}
+
+.zoom-container iframe {
+    transform-origin: top left;
+    transition: transform 0.2s ease;
+}
+
+/* Better button styling */
+.control-btn {
+    transition: all 0.2s ease;
+}
+
+.control-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Active state for view buttons */
+.view-btn.active {
+    background-color: #3b82f6 !important;
+    color: white !important;
+}
+
+.view-btn.inactive {
+    background-color: #6b7280 !important;
+    color: white !important;
+}
+
+@media (max-width: 900px) {
+    #drawingModal .bg-white {
+        width: 99vw;
+        max-width: 99vw;
+    }
+    #drawingModal .border-2 {
+        height: 62.5vh;
+        max-height: 62.5vh;
+    }
+}
+</style>
+{% extends "base.html" %}
+{% block title %}Record Measurements{% endblock %}
+{% block content %}
+<h1 class="text-3xl font-bold mb-6">Въвеждане на измервания</h1>
+<div class="bg-white p-6 rounded-lg shadow-md">
+    <form method="POST">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+                <div class="relative">
+                    <label class="block text-gray-700">Изберете продукт</label>
+                    <div class="relative">
+                        <input type="text" id="productSearchInput" placeholder="Търсете продукти..." class="w-full p-2 border rounded" autocomplete="off">
+                        <div id="productDropdown" class="absolute z-10 w-full bg-white border border-gray-300 rounded shadow-md hidden max-h-48 overflow-auto">
+                            <div class="p-2 text-gray-500 text-sm border-b">Изберете продукт</div>
+                            {% for product in products %}
+                            <div class="product-option px-4 py-2 cursor-pointer hover:bg-gray-100" 
+                                 data-value="{{ product.id }}" 
+                                 data-name="{{ product.product_name }}">
+                                {{ product.product_name }}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <input type="hidden" name="product_id" id="productSelect" required>
+                    <div id="selectedProduct" class="mt-2 text-sm text-gray-600"></div>
+                    <input type="hidden" id="selectedProductId" name="selected_product_id">
+                </div>
+            </div>
+            <div>
+                <label class="block text-gray-700">Номер на машина</label>
+                <input type="text" name="machine_number" placeholder="напр. Машина 1" class="w-full p-2 border rounded" required>
+            </div>
+            <div>
+                <label class="block text-gray-700">Брой</label>
+                <input type="number" name="count" min="1" class="w-full p-2 border rounded" required>
+            </div>
+            <div>
+                <label class="block text-gray-700">Смяна</label>
+                <select name="shift" class="w-full p-2 border rounded" required>
+                    <option value="">Изберете смяна</option>
+                    <option value="Day shift">Дневна смяна</option>
+                    <option value="First shift">Първа смяна</option>
+                    <option value="Second shift">Втора смяна</option>
+                    <option value="Night shift">Нощна смяна</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-gray-700">Дата (ДД-ММ-ГГГГ)</label>
+                <input type="text" name="measurement_date" value="{{ current_date }}"
+                       class="w-full p-2 border rounded" required>
+            </div>
+        </div>
+        <div id="productComments" class="mb-4">
+            <h3 class="text-lg font-semibold mb-2">Коментари за продукта</h3>
+            <div id="commentsContent" class="bg-gray-50 p-3 rounded border text-gray-700">Няма избран продукт</div>
+        </div>
+        <div id="drawingContainer" class="mb-4 hidden">
+            <h3 class="text-lg font-semibold mb-2">Чертежи на продукта</h3>
+            <div class="flex space-x-4">
+                <div id="drawing1Container" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Основен чертеж</label>
+                    <img id="drawingThumbnail1" class="w-24 h-24 object-contain border rounded cursor-pointer" alt="PDF Drawing 1 Thumbnail" onclick="openDrawingModal(1)">
+                </div>
+                <div id="drawing2Container" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Втори чертеж</label>
+                    <img id="drawingThumbnail2" class="w-24 h-24 object-contain border rounded cursor-pointer" alt="PDF Drawing 2 Thumbnail" onclick="openDrawingModal(2)">
+                </div>
+            </div>
+            <p id="noDrawingMessage" class="text-gray-600 hidden">Няма налични чертежи</p>
+        </div>
+        <div class="overflow-x-auto">
+            <table id="measurementsTable" class="w-full border-collapse">
+            <thead>
+                <tr class="bg-gray-200">
+                    <th class="p-2 border">Размер</th>
+                    <th class="p-2 border">Номинал</th>
+                    <th class="p-2 border">Толеранс</th>
+                    <th class="p-2 border">Измерена стойност</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        </div>
+        <button type="submit" class="mt-4 bg-blue-600 text-white p-2 rounded hover:bg-blue-700">Запази измерванията</button>
+    </form>
+</div>
+<!-- Drawing Modal -->
+<div id="drawingModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden" onclick="closeDrawingModal(event)">
+    <div class="bg-white rounded-lg shadow-xl">
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-900 w-full text-center">Преглед на чертеж</h3>
+                <button onclick="closeDrawingModal()" class="text-gray-400 hover:text-gray-600 text-2xl flex-1 text-right" style="background:none;border:none;">&times;</button>
+            </div>
+            <div class="border-2 border-gray-300 rounded-lg overflow-hidden">
+                <iframe id="pdfViewer" src="" class="w-full h-[70vh]" allowfullscreen></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+// Embedded searchable dropdown functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('productSearchInput');
+    const productDropdown = document.getElementById('productDropdown');
+    const productSelect = document.getElementById('productSelect');
+    const productOptions = document.querySelectorAll('.product-option');
+    
+    if (searchInput && productDropdown && productSelect) {
+        let selectedIndex = -1;
+        let filteredOptions = Array.from(productOptions);
+        
+        // Show dropdown on focus
+        searchInput.addEventListener('focus', function() {
+            productDropdown.classList.remove('hidden');
+            filterOptions();
+        });
+        
+        // Handle input for search
+        searchInput.addEventListener('input', function() {
+            filterOptions();
+            selectedIndex = -1;
+        });
+        
+        // Handle keyboard navigation
+        searchInput.addEventListener('keydown', function(e) {
+            const visibleOptions = Array.from(productDropdown.querySelectorAll('.product-option:not(.hidden)'));
+            
+            switch(e.key) {
+                case 'ArrowDown':
+                    e.preventDefault();
+                    selectedIndex = Math.min(selectedIndex + 1, visibleOptions.length - 1);
+                    updateSelection(visibleOptions);
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    selectedIndex = Math.max(selectedIndex - 1, -1);
+                    updateSelection(visibleOptions);
+                    break;
+                case 'Enter':
+                    e.preventDefault();
+                    if (selectedIndex >= 0 && visibleOptions[selectedIndex]) {
+                        selectOption(visibleOptions[selectedIndex]);
+                    }
+                    break;
+                case 'Escape':
+                    hideDropdown();
+                    break;
+            }
+        });
+        
+        // Handle option clicks
+        productOptions.forEach(option => {
+            option.addEventListener('click', function() {
+                const productId = this.getAttribute('data-value');
+                const productName = this.getAttribute('data-name');
+                selectOption(productId, productName);
+            });
+        });
+        
+        // Hide dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!searchInput.contains(e.target) && !productDropdown.contains(e.target)) {
+                hideDropdown();
+            }
+        });
+        
+        function filterOptions() {
+            const searchTerm = searchInput.value.toLowerCase();
+            const options = document.querySelectorAll('.product-option');
+            
+            options.forEach(option => {
+                const productName = option.getAttribute('data-name').toLowerCase();
+                if (productName.includes(searchTerm)) {
+                    option.style.display = 'block';
+                } else {
+                    option.style.display = 'none';
+                }
+            });
+        }
+        
+        function updateSelection(visibleOptions) {
+            // Remove previous selection
+            visibleOptions.forEach(option => option.classList.remove('bg-blue-500', 'text-white'));
+            
+            // Add selection to current index
+            if (selectedIndex >= 0 && visibleOptions[selectedIndex]) {
+                visibleOptions[selectedIndex].classList.add('bg-blue-500', 'text-white');
+            }
+        }
+        
+        function selectOption(productId, productName) {
+            // Update the display
+            document.getElementById('selectedProduct').textContent = productName;
+            document.getElementById('selectedProductId').value = productId;
+            document.getElementById('productSelect').value = productId;
+            document.getElementById('productSearchInput').value = productName;
+            
+            // Close dropdown
+            document.getElementById('productDropdown').classList.add('hidden');
+            
+            // Call the functions from script.js
+            if (typeof loadDimensionsForMeasurements === 'function') {
+                loadDimensionsForMeasurements(productId);
+            }
+            if (typeof loadProductDrawing === 'function') {
+                loadProductDrawing(productId);
+            }
+            
+            // Load product comments
+            loadProductComments(productId);
+        }
+        
+        function hideDropdown() {
+            productDropdown.classList.add('hidden');
+            selectedIndex = -1;
+        }
+    }
+});
+
+function loadDimensionsForMeasurements(productId) {
+    if (!productId) {
+        document.getElementById('measurementsTable').querySelector('tbody').innerHTML = '';
+        return;
+    }
+    fetch(`/get_dimensions/${productId}`)
+        .then(response => response.json())
+        .then(dimensions => {
+            const tbody = document.getElementById('measurementsTable').querySelector('tbody');
+            tbody.innerHTML = '';
+            dimensions.forEach(dim => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="p-2 border">${dim.dimension_name}</td>
+                    <td class="p-2 border">${dim.nominal_value}</td>
+                    <td class="p-2 border">-${dim.tolerance_minus}/+${dim.tolerance_plus}</td>
+                    <td class="p-2 border">
+                        <input type="number" step="any" name="measured_value_${dim.id}" class="w-full p-2 border rounded">
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        });
+}
+
+function loadProductDrawing(productId) {
+    if (!productId) {
+        document.getElementById('drawingContainer').classList.add('hidden');
+        document.getElementById('productComments').classList.add('hidden');
+        return;
+    }
+    fetch(`/get_product/${productId}`)
+        .then(response => response.json())
+        .then(product => {
+            const container = document.getElementById('drawingContainer');
+            const drawing1Container = document.getElementById('drawing1Container');
+            const drawing2Container = document.getElementById('drawing2Container');
+            const thumbnail1 = document.getElementById('drawingThumbnail1');
+            const thumbnail2 = document.getElementById('drawingThumbnail2');
+            const noDrawingMessage = document.getElementById('noDrawingMessage');
+            const commentsContainer = document.getElementById('productComments');
+            const commentsContent = document.getElementById('commentsContent');
+            
+            let hasDrawings = false;
+            
+            // Handle first drawing
+            if (product.drawing_path) {
+                thumbnail1.src = '/static/images/pdf-icon.png';
+                thumbnail1.onclick = function() {
+                    openDrawingModal(1);
+                    document.getElementById('pdfViewer').src = `/${product.drawing_path}`;
+                };
+                drawing1Container.classList.remove('hidden');
+                hasDrawings = true;
+            } else {
+                drawing1Container.classList.add('hidden');
+            }
+            
+            // Handle second drawing
+            if (product.drawing_path_2) {
+                thumbnail2.src = '/static/images/pdf-icon.png';
+                thumbnail2.onclick = function() {
+                    openDrawingModal(2);
+                    document.getElementById('pdfViewer').src = `/${product.drawing_path_2}`;
+                };
+                drawing2Container.classList.remove('hidden');
+                hasDrawings = true;
+            } else {
+                drawing2Container.classList.add('hidden');
+            }
+            
+            // Show/hide container and no drawing message
+            if (hasDrawings) {
+                container.classList.remove('hidden');
+                noDrawingMessage.classList.add('hidden');
+            } else {
+                container.classList.add('hidden');
+                noDrawingMessage.classList.remove('hidden');
+            }
+            
+            // Handle comments
+            if (product.comments && product.comments.trim()) {
+                commentsContent.textContent = product.comments;
+                commentsContainer.classList.remove('hidden');
+            } else {
+                commentsContent.textContent = 'No comments available for this product';
+                commentsContainer.classList.remove('hidden');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading product:', error);
+        });
+}
+
+function openDrawingModal(drawingNumber = 1) {
+    document.getElementById('drawingModal').classList.remove('hidden');
+    // The PDF source is already set by the thumbnail click handler
+}
+
+function closeDrawingModal(event) {
+    if (event && event.target !== document.getElementById('drawingModal')) {
+        return;
+    }
+    document.getElementById('drawingModal').classList.add('hidden');
+}
+
+function zoomIn(event) {
+    event.stopPropagation();
+    const iframe = document.getElementById('pdfViewer');
+    const zoomDisplay = document.getElementById('zoomDisplay');
+    let currentZoom = parseInt(zoomDisplay.textContent);
+    if (currentZoom < 200) {
+        currentZoom += 25;
+        iframe.style.transform = `scale(${currentZoom / 100})`;
+        zoomDisplay.textContent = currentZoom + '%';
+    }
+}
+
+function zoomOut(event) {
+    event.stopPropagation();
+    const iframe = document.getElementById('pdfViewer');
+    const zoomDisplay = document.getElementById('zoomDisplay');
+    let currentZoom = parseInt(zoomDisplay.textContent);
+    if (currentZoom > 25) {
+        currentZoom -= 25;
+        iframe.style.transform = `scale(${currentZoom / 100})`;
+        zoomDisplay.textContent = currentZoom + '%';
+    }
+}
+
+function loadProductComments(productId) {
+    fetch(`/get_product/${productId}`)
+        .then(response => response.json())
+        .then(data => {
+            const commentsContainer = document.getElementById('productComments');
+            
+            if (data.comments && data.comments.trim()) {
+                commentsContainer.innerHTML = `
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 class="font-semibold text-blue-800 mb-2">Product Comments:</h4>
+                        <p class="text-blue-700">${data.comments}</p>
+                    </div>
+                `;
+                commentsContainer.classList.remove('hidden');
+            } else {
+                commentsContainer.innerHTML = `
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <p class="text-gray-600">No comments available for this product.</p>
+                    </div>
+                `;
+                commentsContainer.classList.remove('hidden');
+            }
+        })
+        .catch(error => {
+            const commentsContainer = document.getElementById('productComments');
+            commentsContainer.innerHTML = `
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p class="text-red-600">Error loading product comments.</p>
+                </div>
+            `;
+            commentsContainer.classList.remove('hidden');
+        });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Последни измервания{% endblock %}
+{% block content %}
+<h1 class="text-3xl font-bold mb-6">Последни измервания</h1>
+<div class="bg-white p-6 rounded-lg shadow-md">
+    {% if report_data %}
+    <table class="w-full border-collapse mt-6">
+        <thead>
+            <tr class="bg-gray-200">
+                {% for header in headers %}
+                <th class="p-2 border" {% if header == 'In Tolerance' or header == 'Tol. check' %}style="width: 32px; text-align: center;"{% endif %}>
+                    {% if header == 'In Tolerance' or header == 'Tol. check' %}Tol. check{% else %}{{ header }}{% endif %}
+                </th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in report_data %}
+            <tr>
+                {% for header in headers %}
+                <td class="p-2 border" {% if header == 'In Tolerance' or header == 'Tol. check' %}style="width: 32px; text-align: center;"{% endif %}>
+                    {% if header == 'Product' %}
+                        {{ row['product_name'] }}
+                    {% elif header == 'Dimension' %}
+                        {{ row['dimension_name'] }}
+                    {% elif header == 'Nominal' %}
+                        {{ row['nominal_value'] }}
+                    {% elif header == 'Tolerance (+/-)' %}
+                        +{{ row['tolerance_plus'] }}/-{{ row['tolerance_minus'] }}
+                    {% elif header == 'Measured Value' %}
+                        {{ row['measured_value'] }}
+                    {% elif header == 'Measurement Date' %}
+                        {{ row['measurement_date'] }}
+                    {% elif header == 'Inspector' %}
+                        {{ row['inspector'] }}
+                    {% elif header == 'Machine' %}
+                        {{ row['machine_number'] }}
+                    {% elif header == 'Count' %}
+                        {{ row['count'] }}
+                    {% elif header == 'Shift' %}
+                        {{ row['shift'] }}
+                    {% elif header == 'In Tolerance' or header == 'Tol. check' %}
+                        {% if row['in_tolerance'] %}
+                            <span title="In tolerance" style="display:inline-block;width:16px;height:16px;background:#22c55e;border-radius:50%;vertical-align:middle;"></span>
+                        {% else %}
+                            <span title="Out of tolerance" style="display:inline-block;width:16px;height:16px;background:#ef4444;border-radius:50%;vertical-align:middle;"></span>
+                        {% endif %}
+                    {% endif %}
+                </td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded">
+        <h3 class="font-semibold text-yellow-800 mb-2">Няма намерени данни</h3>
+        <p class="text-yellow-700">Няма скорошни измервания.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %} 

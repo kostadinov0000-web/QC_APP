@@ -1,0 +1,147 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Quality Control{% endblock %}</title>
+    <link href="{{ url_for('static', filename='css/output.css') }}" rel="stylesheet">
+    <script>
+        function showToast(message, type) {
+            const toast = document.createElement('div');
+            toast.className = `fixed top-4 right-4 p-4 rounded shadow-lg text-white ${type === 'success' ? 'bg-green-500' : type === 'warning' ? 'bg-yellow-500' : 'bg-red-500'}`;
+            toast.innerText = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 5000);
+        }
+        
+        // Session timeout management
+        let sessionWarningShown = false;
+        let sessionTimeoutId;
+        let warningTimeoutId;
+        
+        function resetSessionTimer() {
+            // Clear existing timers
+            if (sessionTimeoutId) clearTimeout(sessionTimeoutId);
+            if (warningTimeoutId) clearTimeout(warningTimeoutId);
+            sessionWarningShown = false;
+            
+            // Set warning timer for 25 minutes (5 minutes before timeout)
+            warningTimeoutId = setTimeout(function() {
+                if (!sessionWarningShown) {
+                    sessionWarningShown = true;
+                    showToast('Your session will expire in 5 minutes due to inactivity. Please refresh the page to continue.', 'warning');
+                }
+            }, 25 * 60 * 1000); // 25 minutes
+            
+            // Set logout timer for 30 minutes
+            sessionTimeoutId = setTimeout(function() {
+                showToast('Session expired due to inactivity. Redirecting to login...', 'error');
+                setTimeout(function() {
+                    window.location.href = '/logout';
+                }, 2000);
+            }, 30 * 60 * 1000); // 30 minutes
+        }
+        
+        // Track user activity
+        function trackActivity() {
+            resetSessionTimer();
+        }
+        
+        // Initialize session timer when page loads
+        {% if 'user' in session %}
+        document.addEventListener('DOMContentLoaded', function() {
+            resetSessionTimer();
+            
+            // Track various user activities
+            ['click', 'keypress', 'scroll', 'mousemove'].forEach(function(event) {
+                document.addEventListener(event, trackActivity, true);
+            });
+        });
+        {% endif %}
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    showToast('{{ message }}', '{{ category }}');
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </script>
+</head>
+<body class="bg-gray-100 font-sans">
+    {% if 'user' in session %}
+    <nav class="bg-blue-600 p-4 flex items-center justify-between">
+        <div class="flex items-center gap-x-10">
+            <a href="/" class="text-red-600 text-lg font-bold whitespace-nowrap" style="text-shadow: 1px 1px 0 #fff, -1px 1px 0 #fff, 1px -1px 0 #fff, -1px -1px 0 #fff;">Контрол на качеството</a>
+            <a href="/molds_dashboard" class="text-green-600 text-lg font-bold px-4 py-2 hover:text-green-700 transition-colors" style="text-shadow: 1px 1px 0 #fff, -1px 1px 0 #fff, 1px -1px 0 #fff, -1px -1px 0 #fff;">Матрици</a>
+        </div>
+        <div class="flex items-center gap-x-6">
+            {% if request.endpoint not in ['molds_dashboard', 'mold_detail'] %}
+                {% if session['role'] == 'admin' %}
+                <a href="{{ url_for('products') }}" class="text-white text-lg hover:underline px-2">Продукти</a>
+                {% endif %}
+                <a href="{{ url_for('measurements') }}" class="text-white text-lg hover:underline px-2">Измервания</a>
+                <a href="{{ url_for('recent_measurements') }}" class="text-white text-lg hover:underline px-2">Последни измервания</a>
+                <a href="{{ url_for('reports') }}" class="text-white text-lg hover:underline px-2">Справки</a>
+                {% if session['role'] == 'admin' %}
+                <a href="{{ url_for('users') }}" class="text-white text-lg hover:underline px-2">Потребители</a>
+                {% endif %}
+            {% endif %}
+            <span class="text-white text-lg px-2">{{ session.get('user') }}</span>
+            {% if session.get('user') %}
+            <a href="{{ url_for('logout') }}" class="text-white px-2 cursor-pointer hover:text-red-400 flex items-center" title="Изход">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16,17 21,12 16,7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+            </a>
+            {% endif %}
+        </div>
+    </nav>
+    {% endif %}
+    <div class="container mx-auto p-6">
+        {% block content %}{% endblock %}
+    </div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

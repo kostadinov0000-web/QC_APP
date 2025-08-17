@@ -1,0 +1,1099 @@
+{% extends "base.html" %}
+{% block title %}Детайли за матрица - {{ mold.mold_name }}{% endblock %}
+{% block content %}
+<div class="container mx-auto p-4">
+    <div class="mb-4">
+        <a href="{{ url_for('molds_dashboard') }}" class="text-blue-600 hover:text-blue-800">&larr; Назад към матриците</a>
+    </div>
+    
+    <h1 class="text-2xl font-bold mb-4">{{ mold.mold_name }} ({{ mold.mold_number }})</h1>
+    
+    <!-- Mold Overview -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="bg-white p-4 rounded shadow">
+            <h3 class="font-semibold text-gray-700 mb-2">Основна информация</h3>
+            <p><strong>Продукт:</strong> {{ mold.product_name }}</p>
+            <p><strong>Статус:</strong> 
+                {% if mold.status == 'active' %}
+                    <span class="text-green-600">Активен</span>
+                {% else %}
+                    <span class="text-red-600">Неактивен</span>
+                {% endif %}
+            </p>
+            <p><strong>Създаден:</strong> {{ mold.created_date }}</p>
+        </div>
+        
+        <div class="bg-white p-4 rounded shadow">
+            <h3 class="font-semibold text-gray-700 mb-2">Цикли</h3>
+            <p><strong>Общо цикли:</strong> {{ "{:,}".format(mold.total_cycles) }}</p>
+            <p><strong>Праг за поддръжка:</strong> <span id="thresholdValue">{{ "{:,}".format(mold.maintenance_threshold) }}</span>
+            {% if role == 'admin' %}
+                <button onclick="openEditThresholdModal()" class="ml-2 text-blue-600 hover:text-blue-800 text-xs">Редактирай</button>
+            {% endif %}
+            </p>
+            {% set remaining = mold.maintenance_threshold - mold.total_cycles %}
+            {% if remaining > 0 %}
+                <p><strong>Остават:</strong> <span class="text-green-600">{{ "{:,}".format(remaining) }} цикли</span></p>
+            {% else %}
+                <p><strong>Превишени:</strong> <span class="text-red-600">{{ "{:,}".format(remaining * -1) }} цикли</span></p>
+            {% endif %}
+        </div>
+        
+        <div class="bg-white p-4 rounded shadow">
+            <h3 class="font-semibold text-gray-700 mb-2">Поддръжка</h3>
+            {% if mold.last_maintenance_date %}
+                <p><strong>Последна поддръжка:</strong> {{ mold.last_maintenance_date }}</p>
+            {% else %}
+                <p><strong>Последна поддръжка:</strong> <span class="text-gray-500">Няма</span></p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Mold Comment -->
+    <div class="bg-white p-4 rounded shadow mb-6">
+        <h3 class="font-semibold text-gray-700 mb-4">Коментар за матрицата</h3>
+        <div class="flex items-center space-x-4">
+            <span id="moldCommentText" class="text-gray-800">{{ mold.comment or 'Няма коментар' }}</span>
+            {% if role == 'admin' %}
+                <button onclick="openEditCommentModal()" class="text-blue-600 hover:text-blue-800 text-sm">Редактирай</button>
+                {% if mold.comment %}
+                <button onclick="deleteMoldComment()" class="text-red-600 hover:text-red-800 text-sm">Изтрий</button>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Edit Comment Modal -->
+    <div id="editCommentModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Редактирай коментар</h2>
+                <button onclick="closeEditCommentModal()" class="text-gray-600 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <form id="editCommentForm">
+                <textarea id="editCommentTextarea" name="comment" rows="4" class="w-full border rounded px-2 py-1 text-sm" placeholder="Въведете коментар...">{{ mold.comment or '' }}</textarea>
+                <div class="flex justify-end space-x-3 mt-4">
+                    <button type="button" onclick="closeEditCommentModal()" class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Запази</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Quick Actions -->
+    <div class="bg-white p-4 rounded shadow mb-6">
+        <h3 class="font-semibold text-gray-700 mb-4">Бързи действия</h3>
+        <div class="flex space-x-4">
+            <button onclick="openReworkModal()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                Добави ремонт
+            </button>
+            <button onclick="openMaintenanceModal()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                Планирай поддръжка
+            </button>
+            <button onclick="openProblemModal()" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+                Запиши проблем
+            </button>
+        </div>
+    </div>
+    
+    <!-- PDF Specifications -->
+    <div class="bg-white p-4 rounded shadow mb-6">
+        <h3 class="font-semibold text-gray-700 mb-4">Спецификации на матрицата</h3>
+        <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                {% if mold.specifications_pdf %}
+                    <a href="/static/pdfjs-4.7.76/web/viewer.html?file=/{{ mold.specifications_pdf }}" target="_blank" rel="noopener">
+                        <img src="/static/images/pdf-icon.png" alt="PDF" class="w-8 h-8 cursor-pointer" title="Преглед на спецификациите">
+                    </a>
+                    <span class="text-sm text-gray-600">Спецификации качени</span>
+                {% else %}
+                    <span class="text-sm text-gray-500">Няма качени спецификации</span>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-2">
+                {% if mold.specifications_pdf %}
+                    <a href="/static/pdfjs-4.7.76/web/viewer.html?file=/{{ mold.specifications_pdf }}" target="_blank" rel="noopener" class="text-blue-600 hover:text-blue-800 text-sm">Преглед</a>
+                    {% if role == 'admin' %}
+                        <button onclick="deleteSpecifications()" class="ml-2 text-red-600 hover:text-red-800 text-sm">Изтрий</button>
+                    {% endif %}
+                {% else %}
+                    {% if role == 'admin' %}
+                        <button onclick="openUploadSpecificationsModal()" class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">Качи PDF</button>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Mold Problems -->
+    <div class="bg-white p-4 rounded shadow mb-6">
+        <h3 class="font-semibold text-gray-700 mb-4">Проблеми с матрицата</h3>
+        {% if mold_problems %}
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Дата</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Проблем</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Инспектор</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Описание</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Коментари</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Действия</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for problem in mold_problems %}
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ problem.report_date }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ problem.problem_type }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ problem.inspector }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-900">{{ problem.description or '-' }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-900">{{ problem.comments or '-' }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        {% if problem.inspector == current_user or role == 'admin' %}
+                        <button onclick="editProblem({{ problem.id }}, '{{ problem.problem_type }}', '{{ problem.description or '' }}', '{{ problem.comments or '' }}')" 
+                                class="text-blue-600 hover:text-blue-800 mr-3">Редактирай</button>
+                        <button onclick="deleteProblem({{ problem.id }})" 
+                                class="text-red-600 hover:text-red-800">Изтрий</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-gray-500">Няма записани проблеми.</p>
+        {% endif %}
+    </div>
+    
+    <!-- Rework History -->
+    <div class="bg-white p-4 rounded shadow mb-6">
+        <h3 class="font-semibold text-gray-700 mb-4">История на ремонтите</h3>
+        {% if rework_history %}
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Дата</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Тип ремонт</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Техник</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Описание</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Части</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Дата на завършване</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for rework in rework_history %}
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ rework.rework_date }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ rework.rework_type|bg_maintenance_type }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ rework.technician }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-900">{{ rework.description or '-' }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-900">{{ rework.parts_replaced or '-' }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {{ rework.completed_date or '-' }}
+                        {% if not rework.completed_date and role == 'admin' %}
+                        <button onclick="completeRework({{ rework.id }})" class="ml-2 bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600">Завърши</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-gray-500">Няма записани ремонти.</p>
+        {% endif %}
+    </div>
+    
+    <!-- Maintenance Schedule -->
+    <div class="bg-white p-4 rounded shadow mb-6">
+        <h3 class="font-semibold text-gray-700 mb-4">График за поддръжка</h3>
+        {% if maintenance_schedule %}
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Тип</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Планирана дата</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Статус</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Техник</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Завършена</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Действия</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for maintenance in maintenance_schedule %}
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ maintenance.maintenance_type|bg_maintenance_type }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ maintenance.scheduled_date }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        {% if maintenance.status == 'completed' %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Завършена
+                            </span>
+                        {% else %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                Планирана
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ maintenance.technician or '-' }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ maintenance.completed_date or '-' }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <button onclick="viewMaintenanceDetails({{ maintenance.id }}, '{{ maintenance.maintenance_type }}', '{{ maintenance.scheduled_date }}', '{{ maintenance.technician or '' }}', '{{ maintenance.checklist_items or '' }}', '{{ maintenance.notes or '' }}', '{{ maintenance.status }}', '{{ maintenance.completed_date or '' }}', '{{ maintenance.technician_notes or '' }}')" 
+                                class="text-blue-600 hover:text-blue-800 mr-3">Детайли</button>
+                        {% if maintenance.status != 'completed' %}
+                        <button onclick="completeMaintenance({{ maintenance.id }})" 
+                                class="text-green-600 hover:text-green-800">Завърши</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-gray-500">Няма планирани поддръжки.</p>
+        {% endif %}
+    </div>
+    
+
+</div>
+
+<!-- Rework Modal -->
+<div id="reworkModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Добави ремонт</h2>
+            <button onclick="closeReworkModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+        </div>
+        <form id="reworkForm">
+            <input type="hidden" name="mold_id" value="{{ mold.id }}">
+            <div class="mb-4">
+                <label for="rework_type" class="block text-sm font-medium text-gray-700">Тип ремонт *</label>
+                <select id="rework_type" name="rework_type" required
+                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">Изберете тип</option>
+                    <option value="polishing">Полиране</option>
+                    <option value="part_replacement">Смяна на части</option>
+                    <option value="cleaning">Почистване</option>
+                    <option value="adjustment">Регулиране</option>
+                    <option value="repair">Ремонт</option>
+                    <option value="other">Друго</option>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label for="technician" class="block text-sm font-medium text-gray-700">Техник *</label>
+                <input type="text" id="technician" name="technician" required
+                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="mb-4">
+                <label for="description" class="block text-sm font-medium text-gray-700">Описание</label>
+                <textarea id="description" name="description" rows="3"
+                          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+            </div>
+            <div class="mb-4">
+                <label for="parts_replaced" class="block text-sm font-medium text-gray-700">Сменени части</label>
+                <input type="text" id="parts_replaced" name="parts_replaced"
+                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeReworkModal()" 
+                        class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                <button type="submit" 
+                        class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Запази</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Maintenance Modal -->
+<div id="maintenanceModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Планирай поддръжка</h2>
+            <button onclick="closeMaintenanceModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+        </div>
+        
+        <!-- Tab Navigation -->
+        <div class="border-b border-gray-200 mb-4">
+            <nav class="-mb-px flex space-x-8">
+                <button id="maintenance-tab" onclick="switchMaintenanceTab('maintenance')" 
+                        class="border-b-2 border-blue-500 text-blue-600 py-2 px-1 text-sm font-medium">
+                    Поддръжка
+                </button>
+                <button id="technical-tab" onclick="switchMaintenanceTab('technical')" 
+                        class="border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 py-2 px-1 text-sm font-medium">
+                    Техническо обслужване
+                </button>
+            </nav>
+        </div>
+        
+        <!-- Maintenance Tab Content -->
+        <div id="maintenance-tab-content">
+            <form id="maintenanceForm">
+                <input type="hidden" name="mold_id" value="{{ mold.id }}">
+                <div class="mb-4">
+                    <label for="maintenance_type" class="block text-sm font-medium text-gray-700">Тип поддръжка *</label>
+                    <select id="maintenance_type" name="maintenance_type" required
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Изберете тип</option>
+                        <option value="preventive">Профилактична</option>
+                        <option value="corrective">Корективна</option>
+                        <option value="emergency">Аварийна</option>
+                        <option value="scheduled">Планирана</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="scheduled_date" class="block text-sm font-medium text-gray-700">Планирана дата *</label>
+                    <input type="date" id="scheduled_date" name="scheduled_date" required
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label for="technician" class="block text-sm font-medium text-gray-700">Техник</label>
+                    <input type="text" id="technician" name="technician"
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label for="checklist_items" class="block text-sm font-medium text-gray-700">Чеклист</label>
+                    <textarea id="checklist_items" name="checklist_items" rows="3"
+                              class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+                </div>
+                <div class="mb-4">
+                    <label for="notes" class="block text-sm font-medium text-gray-700">Бележки/Инструкции</label>
+                    <textarea id="notes" name="notes" rows="3"
+                              class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button type="button" onclick="closeMaintenanceModal()" 
+                            class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                    <button type="submit" 
+                            class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Запази</button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Technical Maintenance Tab Content -->
+        <div id="technical-tab-content" class="hidden">
+            <form id="technicalMaintenanceForm">
+                <input type="hidden" name="mold_id" value="{{ mold.id }}">
+                <input type="hidden" name="maintenance_type" value="technical">
+                <div class="mb-4">
+                    <label for="technical_scheduled_date" class="block text-sm font-medium text-gray-700">Планирана дата *</label>
+                    <input type="date" id="technical_scheduled_date" name="scheduled_date" required
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label for="technical_technician" class="block text-sm font-medium text-gray-700">Техник</label>
+                    <input type="text" id="technical_technician" name="technician"
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label for="technical_checklist_items" class="block text-sm font-medium text-gray-700">Технически задачи</label>
+                    <textarea id="technical_checklist_items" name="checklist_items" rows="3"
+                              class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="• Проверка на хидравличната система&#10;• Контрол на температурните сензори&#10;• Почистване на филтри&#10;• Проверка на електронните компоненти"></textarea>
+                </div>
+                <div class="mb-4">
+                    <label for="technical_notes" class="block text-sm font-medium text-gray-700">Технически бележки</label>
+                    <textarea id="technical_notes" name="notes" rows="3"
+                              class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="Специфични технически изисквания или инструкции..."></textarea>
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button type="button" onclick="closeMaintenanceModal()" 
+                            class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                    <button type="submit" 
+                            class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Запази</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Complete Maintenance Modal -->
+<div id="completeMaintenanceModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Завърши поддръжка</h2>
+            <button onclick="closeCompleteMaintenanceModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+        </div>
+        <form id="completeMaintenanceForm">
+            <input type="hidden" id="maintenance_id" name="maintenance_id">
+            <div class="mb-4">
+                <label for="complete_technician" class="block text-sm font-medium text-gray-700">Техник</label>
+                <input type="text" id="complete_technician" name="technician"
+                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="mb-4">
+                <label for="complete_notes" class="block text-sm font-medium text-gray-700">Бележки на техника</label>
+                <textarea id="complete_notes" name="notes" rows="3"
+                          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeCompleteMaintenanceModal()" 
+                        class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                <button type="submit" 
+                        class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Завърши</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Problem Modal -->
+<div id="problemModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Запиши проблем</h2>
+            <button onclick="closeProblemModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+        </div>
+        <form id="problemForm">
+            <input type="hidden" name="mold_id" value="{{ mold.id }}">
+            <div class="mb-4">
+                <label for="problem_type" class="block text-sm font-medium text-gray-700">Тип проблем *</label>
+                <select id="problem_type" name="problem_type" required
+                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">Изберете проблем</option>
+                    <option value="Дефект на материала">Дефект на материала</option>
+                    <option value="Проблем с температурата">Проблем с температурата</option>
+                    <option value="Проблем с налягането">Проблем с налягането</option>
+                    <option value="Износване на матрицата">Износване на матрицата</option>
+                    <option value="Блокиране на Изхвъргачите">Блокиране на Изхвъргачите</option>
+                    <option value="Удар на формообразуваща плоча">Удар на формообразуваща плоча</option>
+                    <option value="Проблем с охлаждането">Проблем с охлаждането</option>
+                    <option value="Деформация на продукта">Деформация на продукта</option>
+                    <option value="Други проблеми">Други проблеми</option>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label for="problem_description" class="block text-sm font-medium text-gray-700">Описание</label>
+                <textarea id="problem_description" name="description" rows="3"
+                          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+            </div>
+            <div class="mb-4">
+                <label for="problem_comments" class="block text-sm font-medium text-gray-700">Коментари</label>
+                <textarea id="problem_comments" name="comments" rows="3"
+                          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeProblemModal()" 
+                        class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                <button type="submit" 
+                        class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Запази</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Problem Modal -->
+<div id="editProblemModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Редактирай проблем</h2>
+            <button onclick="closeEditProblemModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+        </div>
+        <form id="editProblemForm">
+            <input type="hidden" id="edit_problem_id" name="problem_id">
+            <div class="mb-4">
+                <label for="edit_problem_type" class="block text-sm font-medium text-gray-700">Тип проблем *</label>
+                <select id="edit_problem_type" name="problem_type" required
+                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">Изберете проблем</option>
+                    <option value="Дефект на материала">Дефект на материала</option>
+                    <option value="Проблем с температурата">Проблем с температурата</option>
+                    <option value="Проблем с налягането">Проблем с налягането</option>
+                    <option value="Износване на матрицата">Износване на матрицата</option>
+                    <option value="Блокиране на Изхвъргачите">Блокиране на Изхвъргачите</option>
+                    <option value="Удар на формообразуваща плоча">Удар на формообразуваща плоча</option>
+                    <option value="Проблем с охлаждането">Проблем с охлаждането</option>
+                    <option value="Деформация на продукта">Деформация на продукта</option>
+                    <option value="Други проблеми">Други проблеми</option>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label for="edit_problem_description" class="block text-sm font-medium text-gray-700">Описание</label>
+                <textarea id="edit_problem_description" name="description" rows="3"
+                          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+            </div>
+            <div class="mb-4">
+                <label for="edit_problem_comments" class="block text-sm font-medium text-gray-700">Коментари</label>
+                <textarea id="edit_problem_comments" name="comments" rows="3"
+                          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeEditProblemModal()" 
+                        class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                <button type="submit" 
+                        class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Обнови</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Maintenance Details Modal -->
+<div id="maintenanceDetailsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-lg">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Детайли за поддръжка</h2>
+            <button onclick="closeMaintenanceDetailsModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+        </div>
+        
+        <div class="space-y-4">
+            <!-- Maintenance Type -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Тип поддръжка:</label>
+                <p id="detailMaintenanceType" class="text-sm text-gray-900 bg-gray-50 p-2 rounded"></p>
+            </div>
+            
+            <!-- Scheduled Date -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Планирана дата:</label>
+                <p id="detailScheduledDate" class="text-sm text-gray-900 bg-gray-50 p-2 rounded"></p>
+            </div>
+            
+            <!-- Status -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Статус:</label>
+                <p id="detailStatus" class="text-sm text-gray-900 bg-gray-50 p-2 rounded"></p>
+            </div>
+            
+            <!-- Technician -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Техник:</label>
+                <p id="detailTechnician" class="text-sm text-gray-900 bg-gray-50 p-2 rounded"></p>
+            </div>
+            
+            <!-- Completed Date -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Дата на завършване:</label>
+                <p id="detailCompletedDate" class="text-sm text-gray-900 bg-gray-50 p-2 rounded"></p>
+            </div>
+            
+            <!-- Checklist Items -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Задачи за изпълнение:</label>
+                <div class="bg-gray-50 p-3 rounded max-h-32 overflow-y-auto">
+                    <ul id="detailChecklist" class="list-none"></ul>
+                </div>
+            </div>
+            
+            <!-- Inspector/Admin Notes -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Бележки от инспектор/админ:</label>
+                <div class="bg-gray-50 p-3 rounded max-h-24 overflow-y-auto">
+                    <p id="detailNotes" class="text-sm text-gray-900"></p>
+                </div>
+            </div>
+            
+            <!-- Technician Notes -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Бележки на техника:</label>
+                <div class="bg-gray-50 p-3 rounded max-h-24 overflow-y-auto">
+                    <p id="detailTechnicianNotes" class="text-sm text-gray-900"></p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex justify-end mt-6">
+            <button onclick="closeMaintenanceDetailsModal()" 
+                    class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Затвори</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function openReworkModal() {
+    document.getElementById('reworkModal').classList.remove('hidden');
+}
+
+function closeReworkModal() {
+    document.getElementById('reworkModal').classList.add('hidden');
+    document.getElementById('reworkForm').reset();
+}
+
+function openMaintenanceModal() {
+    document.getElementById('maintenanceModal').classList.remove('hidden');
+}
+
+function closeMaintenanceModal() {
+    document.getElementById('maintenanceModal').classList.add('hidden');
+    document.getElementById('maintenanceForm').reset();
+}
+
+function switchMaintenanceTab(tab) {
+    const maintenanceTabContent = document.getElementById('maintenance-tab-content');
+    const technicalTabContent = document.getElementById('technical-tab-content');
+    const maintenanceTabButton = document.getElementById('maintenance-tab');
+    const technicalTabButton = document.getElementById('technical-tab');
+
+    if (tab === 'maintenance') {
+        maintenanceTabContent.classList.remove('hidden');
+        technicalTabContent.classList.add('hidden');
+        maintenanceTabButton.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
+        maintenanceTabButton.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        technicalTabButton.classList.remove('border-b-2', 'border-blue-500', 'text-blue-600');
+        technicalTabButton.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+    } else {
+        maintenanceTabContent.classList.add('hidden');
+        technicalTabContent.classList.remove('hidden');
+        maintenanceTabButton.classList.remove('border-b-2', 'border-blue-500', 'text-blue-600');
+        maintenanceTabButton.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        technicalTabButton.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
+        technicalTabButton.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+    }
+}
+
+function completeMaintenance(maintenanceId) {
+    document.getElementById('maintenance_id').value = maintenanceId;
+    document.getElementById('completeMaintenanceModal').classList.remove('hidden');
+}
+
+function closeCompleteMaintenanceModal() {
+    document.getElementById('completeMaintenanceModal').classList.add('hidden');
+    document.getElementById('completeMaintenanceForm').reset();
+}
+
+function openProblemModal() {
+    document.getElementById('problemModal').classList.remove('hidden');
+}
+
+function closeProblemModal() {
+    document.getElementById('problemModal').classList.add('hidden');
+    document.getElementById('problemForm').reset();
+}
+
+function editProblem(problemId, problemType, description, comments) {
+    document.getElementById('edit_problem_id').value = problemId;
+    document.getElementById('edit_problem_type').value = problemType;
+    document.getElementById('edit_problem_description').value = description;
+    document.getElementById('edit_problem_comments').value = comments;
+    document.getElementById('editProblemModal').classList.remove('hidden');
+}
+
+function closeEditProblemModal() {
+    document.getElementById('editProblemModal').classList.add('hidden');
+    document.getElementById('editProblemForm').reset();
+}
+
+function deleteProblem(problemId) {
+    if (confirm('Сигурни ли сте, че искате да изтриете този проблем?')) {
+        const formData = new FormData();
+        formData.append('problem_id', problemId);
+        
+        fetch('/delete_mold_problem', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error deleting problem');
+        });
+    }
+}
+
+document.getElementById('reworkForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    
+    fetch('/add_rework', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            closeReworkModal();
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error adding rework');
+    });
+});
+
+document.getElementById('maintenanceForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    
+    fetch('/add_maintenance', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            closeMaintenanceModal();
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error adding maintenance');
+    });
+});
+
+document.getElementById('technicalMaintenanceForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    
+    fetch('/add_maintenance', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            closeMaintenanceModal();
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error adding technical maintenance');
+    });
+});
+
+document.getElementById('completeMaintenanceForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    
+    fetch('/complete_maintenance', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            closeCompleteMaintenanceModal();
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error completing maintenance');
+    });
+});
+
+document.getElementById('problemForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    
+    fetch('/add_mold_problem', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            closeProblemModal();
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error adding problem');
+    });
+});
+
+document.getElementById('editProblemForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    
+    fetch('/edit_mold_problem', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            closeEditProblemModal();
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error editing problem');
+    });
+});
+
+// Maintenance Details Modal Functions
+function viewMaintenanceDetails(id, type, date, technician, checklist, notes, status, completedDate, technicianNotes) {
+    document.getElementById('detailMaintenanceType').textContent = type;
+    document.getElementById('detailScheduledDate').textContent = date;
+    document.getElementById('detailTechnician').textContent = technician || 'Не е указан';
+    document.getElementById('detailStatus').textContent = status === 'completed' ? 'Завършена' : 'Планирана';
+    document.getElementById('detailCompletedDate').textContent = completedDate || 'Не е завършена';
+    
+    // Handle checklist items
+    const checklistContainer = document.getElementById('detailChecklist');
+    if (checklist && checklist.trim() !== '') {
+        checklistContainer.innerHTML = '';
+        const items = checklist.split('\n');
+        items.forEach(item => {
+            if (item.trim() !== '') {
+                const listItem = document.createElement('li');
+                listItem.className = 'mb-1 text-sm text-gray-700';
+                listItem.textContent = '• ' + item.trim();
+                checklistContainer.appendChild(listItem);
+            }
+        });
+    } else {
+        checklistContainer.innerHTML = '<li class="text-sm text-gray-500">Няма указани задачи</li>';
+    }
+    
+    // Handle inspector/admin notes
+    document.getElementById('detailNotes').textContent = notes || 'Няма допълнителни бележки';
+    
+    // Handle technician notes
+    document.getElementById('detailTechnicianNotes').textContent = technicianNotes || 'Няма бележки от техника';
+    
+    document.getElementById('maintenanceDetailsModal').classList.remove('hidden');
+}
+
+function closeMaintenanceDetailsModal() {
+    document.getElementById('maintenanceDetailsModal').classList.add('hidden');
+}
+
+// PDF modal and functions removed: now opens in new tab
+
+function openUploadSpecificationsModal() {
+    document.getElementById('uploadSpecificationsModal').classList.remove('hidden');
+}
+
+function closeUploadSpecificationsModal() {
+    document.getElementById('uploadSpecificationsModal').classList.add('hidden');
+    document.getElementById('uploadSpecificationsForm').reset();
+}
+
+function deleteSpecifications() {
+    if (confirm('Сигурни ли сте, че искате да изтриете спецификациите?')) {
+        const formData = new FormData();
+        formData.append('mold_id', '{{ mold.id }}');
+        
+        fetch('/delete_mold_specifications', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error deleting specifications');
+        });
+    }
+}
+
+// Handle specifications upload form
+document.addEventListener('DOMContentLoaded', function() {
+  const uploadForm = document.getElementById('uploadSpecificationsForm');
+  if (!uploadForm) return;
+  uploadForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      formData.append('mold_id', '{{ mold.id }}');
+      fetch('/upload_mold_specifications', {
+          method: 'POST',
+          body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+          if (data.status === 'success') {
+              closeUploadSpecificationsModal();
+              location.reload();
+          } else {
+              alert('Error: ' + data.message);
+          }
+      })
+      .catch(error => {
+          console.error('Error:', error);
+          alert('Error uploading specifications');
+      });
+  });
+});
+
+function openEditCommentModal() {
+    document.getElementById('editCommentModal').classList.remove('hidden');
+    document.getElementById('editCommentTextarea').focus();
+}
+function closeEditCommentModal() {
+    document.getElementById('editCommentModal').classList.add('hidden');
+}
+document.getElementById('editCommentForm')?.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    formData.append('mold_id', '{{ mold.id }}');
+    fetch('/update_mold_comment', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            closeEditCommentModal();
+            location.reload();
+        } else {
+            alert('Грешка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Възникна грешка при запазването');
+    });
+});
+function deleteMoldComment() {
+    if (confirm('Сигурни ли сте, че искате да изтриете коментара?')) {
+        const formData = new FormData();
+        formData.append('mold_id', '{{ mold.id }}');
+        fetch('/delete_mold_comment', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                alert('Грешка: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Възникна грешка при изтриването');
+        });
+    }
+}
+
+function openEditThresholdModal() {
+    document.getElementById('editThresholdModal').classList.remove('hidden');
+    document.getElementById('newThreshold').focus();
+}
+
+function closeEditThresholdModal() {
+    document.getElementById('editThresholdModal').classList.add('hidden');
+}
+
+// Handle threshold edit form submission
+document.addEventListener('DOMContentLoaded', function() {
+    const editThresholdForm = document.getElementById('editThresholdForm');
+    if (editThresholdForm) {
+        editThresholdForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            formData.append('mold_id', '{{ mold.id }}');
+            
+            fetch('/update_mold_threshold', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    closeEditThresholdModal();
+                    // Update the threshold value on the page
+                    document.getElementById('thresholdValue').textContent = data.new_threshold.toLocaleString();
+                    location.reload();
+                } else {
+                    alert('Грешка: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Възникна грешка при запазването');
+            });
+        });
+    }
+});
+</script>
+
+<script>
+function completeRework(reworkId) {
+    if (confirm('Сигурни ли сте, че искате да отбележите ремонта като завършен?')) {
+        const formData = new FormData();
+        formData.append('rework_id', reworkId);
+        fetch('/complete_rework', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                alert('Грешка: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Възникна грешка при завършването');
+        });
+    }
+}
+</script>
+
+<!-- PDF modal removed: now opens in new tab -->
+
+<!-- Edit Threshold Modal -->
+<div id="editThresholdModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-xs">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Редактирай праг за поддръжка</h2>
+            <button onclick="closeEditThresholdModal()" class="text-gray-600 hover:text-gray-800 text-2xl">&times;</button>
+        </div>
+        <form id="editThresholdForm">
+            <input type="number" id="newThreshold" name="new_threshold" min="1" required class="w-full border rounded px-2 py-1 text-sm" value="{{ mold.maintenance_threshold }}">
+            <div class="flex justify-end space-x-3 mt-4">
+                <button type="button" onclick="closeEditThresholdModal()" class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Запази</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Upload Specifications Modal -->
+<div id="uploadSpecificationsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Качи спецификации</h2>
+            <button onclick="closeUploadSpecificationsModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+        </div>
+        <form id="uploadSpecificationsForm" enctype="multipart/form-data">
+            <div class="mb-4">
+                <label for="pdf_file" class="block text-sm font-medium text-gray-700">Избери PDF файл *</label>
+                <input type="file" id="pdf_file" name="pdf_file" accept=".pdf" required
+                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                <p class="text-xs text-gray-500 mt-1">Само PDF файлове са разрешени</p>
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeUploadSpecificationsModal()" 
+                        class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                <button type="submit" 
+                        class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Качи</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %} 

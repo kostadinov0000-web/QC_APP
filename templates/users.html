@@ -1,0 +1,249 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script>{% extends "base.html" %}
+{% block title %}User Management{% endblock %}
+{% block content %}
+<h1 class="text-3xl font-bold mb-6">Управление на потребители (само за администратори)</h1>
+<!-- Change Own Password Section -->
+<div class="bg-white p-6 rounded-lg shadow-md mb-6">
+    <h2 class="text-xl font-semibold mb-4">Смени собствена парола</h2>
+    <form method="POST" id="ownPasswordForm">
+        <input type="hidden" name="action" value="change_password">
+        <input type="hidden" name="username" value="{{ session.user }}">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-gray-700">Нова парола (минимум 6 символа)</label>
+                <input type="password" name="new_password" id="ownNewPassword" 
+                       class="w-full p-2 border rounded" required minlength="6">
+            </div>
+            <div>
+                <label class="block text-gray-700">Потвърди новата парола</label>
+                <input type="password" name="confirm_password" id="ownConfirmPassword" 
+                       class="w-full p-2 border rounded" required minlength="6">
+            </div>
+        </div>
+        <button type="submit" class="mt-4 bg-green-600 text-white p-2 rounded hover:bg-green-700">
+            Смени моята парола
+        </button>
+    </form>
+</div>
+
+<div class="bg-white p-6 rounded-lg shadow-md mb-6">
+    <h2 class="text-xl font-semibold mb-4">Добави потребител</h2>
+    <form method="POST">
+        <input type="hidden" name="action" value="add_user">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-gray-700">Потребителско име</label>
+                <input type="text" name="username" class="w-full p-2 border rounded" required>
+            </div>
+            <div>
+                <label class="block text-gray-700">Парола</label>
+                <input type="password" name="password" class="w-full p-2 border rounded" required>
+            </div>
+            <div>
+                <label class="block text-gray-700">Роля</label>
+                <select name="role" class="w-full p-2 border rounded" required>
+                    <option value="admin">Администратор</option>
+                    <option value="inspector">Инспектор</option>
+                </select>
+            </div>
+        </div>
+        <button type="submit" class="mt-4 bg-blue-600 text-white p-2 rounded hover:bg-blue-700">Добави потребител</button>
+    </form>
+</div>
+
+
+<div class="bg-white p-6 rounded-lg shadow-md">
+    <h2 class="text-xl font-semibold mb-4">Потребители</h2>
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse">
+        <thead>
+            <tr class="bg-gray-200">
+                <th class="p-2 border">Потребителско име</th>
+                <th class="p-2 border">Роля</th>
+                <th class="border" style="padding: 0; width: 1%;">Действия</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td class="p-2 border">{{ user['username'] }}</td>
+                <td class="p-2 border">{{ user['role'] }}</td>
+                <td class="border" style="padding: 0; width: 1%;">
+                    <div style="display: flex; gap: 10px; align-items: flex-start; margin: 0; width: auto;">
+                        <button onclick="openPasswordModal('{{ user['username'] }}')" 
+                                style="background-color: #3b82f6; color: white; padding: 0; border-radius: 4px; border: none; cursor: pointer; font-size: 14px; width: 120px; height: 36px; display: flex; align-items: center; justify-content: center; margin: 0; vertical-align: top;"
+                                onmouseover="this.style.backgroundColor='#2563eb'" 
+                                onmouseout="this.style.backgroundColor='#3b82f6'">
+                            Смени парола
+                        </button>
+                        <form method="POST" onsubmit="return confirm('Изтрий този потребител?');" style="display: inline; margin: 0; padding: 0; vertical-align: top;">
+                        <input type="hidden" name="action" value="delete_user">
+                        <input type="hidden" name="username" value="{{ user['username'] }}">
+                            <button type="submit" 
+                                    style="background-color: #ef4444; color: white; padding: 0; border-radius: 4px; border: none; cursor: pointer; font-size: 14px; width: 120px; height: 36px; display: flex; align-items: center; justify-content: center; margin: 0; vertical-align: top;"
+                                    onmouseover="this.style.backgroundColor='#dc2626'" 
+                                    onmouseout="this.style.backgroundColor='#ef4444'">
+                                Изтрий
+                            </button>
+                    </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<!-- Password Change Modal -->
+<div id="passwordModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+        <h3 class="text-lg font-semibold mb-4">Смени парола на потребител</h3>
+        <form id="passwordForm" method="POST">
+            <input type="hidden" name="action" value="change_password">
+            <input type="hidden" name="username" id="modalUsername">
+            
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">
+                    Потребител:
+                </label>
+                <p id="modalUsernameDisplay" class="text-gray-900 font-medium"></p>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">
+                    Нова парола (минимум 6 символа):
+                </label>
+                <input type="password" name="new_password" id="newPassword" 
+                       class="w-full p-2 border rounded focus:border-blue-500" 
+                       required minlength="6">
+            </div>
+            
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2">
+                    Потвърди новата парола:
+                </label>
+                <input type="password" name="confirm_password" id="confirmPassword" 
+                       class="w-full p-2 border rounded focus:border-blue-500" 
+                       required minlength="6">
+            </div>
+            
+            <div class="flex justify-end gap-3">
+                <button type="button" onclick="closePasswordModal()" 
+                        class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                    Отказ
+                </button>
+                <button type="submit" 
+                        class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                    Смени парола
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openPasswordModal(username) {
+    document.getElementById('modalUsername').value = username;
+    document.getElementById('modalUsernameDisplay').textContent = username;
+    document.getElementById('newPassword').value = '';
+    document.getElementById('confirmPassword').value = '';
+    document.getElementById('passwordModal').classList.remove('hidden');
+    document.getElementById('passwordModal').classList.add('flex');
+}
+
+function closePasswordModal() {
+    document.getElementById('passwordModal').classList.add('hidden');
+    document.getElementById('passwordModal').classList.remove('flex');
+}
+
+// Close modal when clicking outside
+document.getElementById('passwordModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closePasswordModal();
+    }
+});
+
+// Password confirmation validation
+document.getElementById('passwordForm').addEventListener('submit', function(e) {
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+    if (newPassword !== confirmPassword) {
+        e.preventDefault();
+        alert('Новата парола и потвърждението не съвпадат!');
+        return false;
+    }
+    
+    if (newPassword.length < 6) {
+        e.preventDefault();
+        alert('Паролата трябва да съдържа поне 6 символа!');
+        return false;
+    }
+    
+    return confirm('Сигурни ли сте, че искате да смените паролата на този потребител?');
+});
+
+// Own password form validation
+document.getElementById('ownPasswordForm').addEventListener('submit', function(e) {
+    const newPassword = document.getElementById('ownNewPassword').value;
+    const confirmPassword = document.getElementById('ownConfirmPassword').value;
+    
+    if (newPassword !== confirmPassword) {
+        e.preventDefault();
+        alert('Новата парола и потвърждението не съвпадат!');
+        return false;
+    }
+    
+    if (newPassword.length < 6) {
+        e.preventDefault();
+        alert('Паролата трябва да съдържа поне 6 символа!');
+        return false;
+    }
+    
+    return confirm('Сигурни ли сте, че искате да смените собствената си парола?');
+});
+
+
+</script>
+
+{% endblock %}

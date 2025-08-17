@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Мониторинг на матрици{% endblock %}
+{% block content %}
+<div class="container mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4">Мониторинг на матрици</h1>
+    
+    <div class="bg-white p-4 rounded shadow">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Матрица</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Продукт</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Цикли</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Праг за поддръжка</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Статус</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Последна поддръжка</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Действия</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for mold in molds %}
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div class="font-medium">{{ mold.mold_name }}</div>
+                        <div class="text-gray-500">{{ mold.mold_number }}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {{ mold.product_name }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div class="font-medium">{{ "{:,}".format(mold.total_cycles) }}</div>
+                        <div class="text-sm text-gray-500">
+                            {% set remaining = mold.maintenance_threshold - mold.total_cycles %}
+                            {% if remaining > 0 %}
+                                Остават {{ "{:,}".format(remaining) }} цикли
+                            {% else %}
+                                Превишени с {{ "{:,}".format(remaining * -1) }} цикли
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {{ "{:,}".format(mold.maintenance_threshold) }}
+                        {% if role == 'admin' %}
+                        <button onclick="editThreshold({{ mold.id }}, {{ mold.maintenance_threshold }})" 
+                                class="ml-2 text-blue-600 hover:text-blue-800 text-xs">Редактирай</button>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        {% if mold.maintenance_status == 'overdue' %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                Изисква поддръжка
+                            </span>
+                        {% elif mold.maintenance_status == 'due_soon' %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                Скоро поддръжка
+                            </span>
+                        {% else %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                OK
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {% if mold.last_maintenance_date %}
+                            {{ mold.last_maintenance_date }}
+                        {% else %}
+                            <span class="text-gray-500">Няма</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <a href="{{ url_for('mold_detail', mold_id=mold.id) }}" 
+                           class="text-blue-600 hover:text-blue-800 mr-3">Детайли</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+
+<!-- Threshold Edit Modal -->
+<div id="thresholdModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Редактирай праг за поддръжка</h2>
+            <button onclick="closeThresholdModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+        </div>
+        <form id="thresholdForm">
+            <input type="hidden" id="moldId" name="mold_id">
+            <div class="mb-4">
+                <label for="threshold" class="block text-sm font-medium text-gray-700">Праг за поддръжка (цикли)</label>
+                <input type="number" id="threshold" name="threshold" min="1" required
+                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeThresholdModal()" 
+                        class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                <button type="submit" 
+                        class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Запази</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function editThreshold(moldId, currentThreshold) {
+    document.getElementById('moldId').value = moldId;
+    document.getElementById('threshold').value = currentThreshold;
+    document.getElementById('thresholdModal').classList.remove('hidden');
+}
+
+function closeThresholdModal() {
+    document.getElementById('thresholdModal').classList.add('hidden');
+    document.getElementById('thresholdForm').reset();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('thresholdForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        
+        fetch('/update_mold_threshold', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                closeThresholdModal();
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error updating threshold');
+        });
+    });
+});
+</script>
+{% endblock %} 

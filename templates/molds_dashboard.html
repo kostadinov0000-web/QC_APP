@@ -1,0 +1,821 @@
+{% extends "base.html" %}
+{% block title %}Матрици - Дашборд{% endblock %}
+{% block content %}
+<div class="container mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4">Дашборд на матрици</h1>
+    
+    <!-- Minimal Machine Row Section -->
+    <div class="bg-white p-2 rounded shadow mb-4 w-full">
+        <h2 class="text-base font-semibold text-gray-800 mb-2 flex items-center gap-2">🛠️ Машини</h2>
+        <div class="flex flex-wrap items-center border-b border-gray-200 pb-1 mb-2">
+            {% set machine_map = {} %}
+            {% for assignment in machine_assignments %}
+                {% set _ = machine_map.update({assignment.machine_number: assignment}) %}
+            {% endfor %}
+            {% for i in range(1, 11) %}
+                {% set machine = machine_map.get(i|string) %}
+                <div class="flex items-center text-xs px-3 py-0.5 mb-1 whitespace-nowrap">
+                    <span class="font-bold text-gray-700 mr-0.5">М{{ i }}</span>
+                    {% if machine %}
+                        <a href="{{ url_for('mold_detail', mold_id=machine.get('mold_id')) }}" class="font-semibold text-blue-700 flex items-center gap-1 hover:underline hover:text-blue-900 transition">
+                            <span class="text-base">🧩</span> {{ machine.mold_name }}
+                        </a>
+                    {% else %}
+                        <span class="text-gray-400">Свободна</span>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+        {% if role == 'admin' %}
+        <div class="w-full flex justify-center">
+            <a href="#" onclick="openAddMachineModal();return false;" class="text-green-600 hover:underline text-sm font-semibold">+ Добави</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Add Machine Modal (hidden by default) -->
+    {% if role == 'admin' %}
+    <div id="addMachineModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-6 rounded shadow-lg w-full max-w-xs">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold">Добави нова машина</h2>
+                <button onclick="closeAddMachineModal()" class="text-gray-600 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <form id="addMachineForm">
+                <div class="mb-4">
+                    <label for="machine_number" class="block text-sm font-medium text-gray-700">Номер на машина *</label>
+                    <input type="number" id="machine_number" name="machine_number" min="1" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button type="button" onclick="closeAddMachineModal()" class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                    <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Добави</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script>
+    function openAddMachineModal() {
+        document.getElementById('addMachineModal').classList.remove('hidden');
+    }
+    function closeAddMachineModal() {
+        document.getElementById('addMachineModal').classList.add('hidden');
+    }
+    document.getElementById('addMachineForm')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        // TODO: Implement AJAX call to backend to add machine
+        closeAddMachineModal();
+        location.reload();
+    });
+    </script>
+    {% endif %}
+
+    <!-- Recent Problems Overview -->
+    <div class="bg-white p-4 rounded shadow mb-4">
+        <h2 class="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <span class="text-red-600">⚠️</span> Последни проблеми с матрици
+        </h2>
+        {% if recent_problems %}
+        <div class="space-y-2">
+            {% for problem in recent_problems %}
+            <div class="border-l-4 border-red-400 bg-red-50 p-3 rounded-r-lg">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                            <a href="{{ url_for('mold_detail', mold_id=problem.id) }}" class="font-semibold text-blue-700 hover:text-blue-900 hover:underline">
+                                {{ problem.mold_name }} ({{ problem.mold_number }})
+                            </a>
+                            <span class="text-sm text-gray-600">• {{ problem.product_name }}</span>
+                        </div>
+                        <div class="text-sm text-gray-700 mb-1">
+                            <span class="font-medium text-red-700">{{ problem.problem_type }}</span>
+                            {% if problem.description %}
+                            <span class="text-gray-600">- {{ problem.description[:100] }}{% if problem.description|length > 100 %}...{% endif %}</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-xs text-gray-500">
+                            Докладвано от <span class="font-medium">{{ problem.inspector }}</span> на {{ problem.report_date }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-gray-500">
+            <span class="text-green-600">✅</span> Няма неотдавна докладвани проблеми
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Search and Filter Bar -->
+    <div class="mb-4 flex flex-col md:flex-row gap-4">
+        <!-- Search Bar -->
+        <div class="relative flex-1 max-w-md">
+            <input 
+                type="text" 
+                id="searchInput" 
+                placeholder="Търсене по матрица или продукт..." 
+                class="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                onkeyup="searchTable()"
+            >
+            <div class="absolute left-3 top-2.5">
+                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 21-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+            </div>
+            <button 
+                id="clearSearch" 
+                class="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 hidden"
+                onclick="clearSearch()"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        
+        <!-- Status Filter -->
+        <div class="relative">
+            <select 
+                id="statusFilter" 
+                class="py-2 px-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                onchange="filterByStatus()"
+            >
+                <option value="">Всички статуси</option>
+                <option value="Ok">Ok</option>
+                <option value="За Поддръжка">За Поддръжка</option>
+                <option value="Ремонт">Ремонт</option>
+                <option value="За обслужване">За обслужване</option>
+                <option value="problems_only">Само с проблеми</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="bg-white p-4 rounded shadow">
+        <div class="overflow-x-auto">
+            <table id="moldsTable" class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Матрица</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Продукт</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortTable(2, 'number')">
+                        Цикли 
+                        <span id="cycles-sort-icon" class="ml-1">⇅</span>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortTable(3, 'number')">
+                        Праг за поддръжка 
+                        <span id="threshold-sort-icon" class="ml-1">⇅</span>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" onclick="sortTable(4, 'number')">
+                        Оставащи цикли 
+                        <span id="remaining-sort-icon" class="ml-1">⇅</span>
+                    </th>
+                    <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Прогрес</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Статус</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none" onclick="sortByProblems()">
+                        Записани проблеми
+                        <span id="problems-sort-icon" class="ml-1">⇅</span>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Действия</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for mold in molds %}
+                <tr data-problem-count="{{ mold.problem_count }}">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div class="font-medium">{{ mold.mold_name }}</div>
+                        <div class="text-gray-500">{{ mold.mold_number }}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ mold.product_name }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ "{:,}".format(mold.total_cycles) }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ "{:,}".format(mold.maintenance_threshold) }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {% set remaining = mold.maintenance_threshold - mold.total_cycles %}
+                        {% if remaining > 0 %}
+                            {{ "{:,}".format(remaining) }}
+                        {% else %}
+                            <span class="text-red-600">{{ "{:,}".format(remaining * -1) }} (превишени)</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-center">
+                        {% set remaining = mold.maintenance_threshold - mold.total_cycles %}
+                        {% set usage_percent = (mold.total_cycles / mold.maintenance_threshold * 100)|round(0)|int %}
+                        {% if usage_percent > 100 %}{% set usage_percent = 100 %}{% endif %}
+                        
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                            <!-- Progress Bar -->
+                            <div style="width: 80px; height: 16px; background-color: #e5e7eb; border-radius: 8px; border: 1px solid #d1d5db; overflow: hidden;">
+                                {% if usage_percent < 70 %}
+                                    <div style="height: 100%; background-color: #10b981; border-radius: 8px; width: {{ usage_percent }}%;"></div>
+                                {% elif usage_percent < 90 %}
+                                    <div style="height: 100%; background-color: #f59e0b; border-radius: 8px; width: {{ usage_percent }}%;"></div>
+                                {% else %}
+                                    <div style="height: 100%; background-color: #ef4444; border-radius: 8px; width: {{ usage_percent }}%;"></div>
+                                {% endif %}
+                            </div>
+                            <!-- Percentage Text -->
+                            <span style="font-size: 12px; font-weight: 500; 
+                                {% if usage_percent < 70 %}color: #059669;
+                                {% elif usage_percent < 90 %}color: #d97706;
+                                {% else %}color: #dc2626;{% endif %}">
+                                {{ usage_percent }}%
+                            </span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        {% set remaining = mold.maintenance_threshold - mold.total_cycles %}
+                        {% if remaining <= 0 %}
+                            <span class="text-red-600">За обслужване</span>
+                        {% elif remaining <= 5000 %}
+                            <span class="text-yellow-600">За Поддръжка</span>
+                        {% else %}
+                            <span class="text-green-600">Ok</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        {% if mold.problem_count > 0 %}
+                            <button onclick="showProblemsModal({{ mold.id }})" class="text-red-600 hover:text-red-800 cursor-pointer">
+                                Проблеми - {{ mold.problem_count }}
+                            </button>
+                        {% else %}
+                            <span class="text-gray-500">Няма проблеми</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <a href="{{ url_for('mold_detail', mold_id=mold.id) }}" class="text-blue-600 hover:text-blue-800 mr-2">Детайли</a>
+                        <button onclick="openReworkModal({{ mold.id }}, '{{ mold.mold_name }}')" class="text-red-600 hover:text-red-800 mr-2 cursor-pointer">Ремонт</button>
+                        <button onclick="openMaintenanceModal({{ mold.id }}, '{{ mold.mold_name }}')" class="text-yellow-600 hover:text-yellow-800 cursor-pointer">Поддръжка</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+
+<!-- Rework Modal -->
+<div id="reworkModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Добави ремонт</h2>
+            <button onclick="closeReworkModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+        </div>
+        <form id="reworkForm">
+            <input type="hidden" id="rework_mold_id" name="mold_id">
+            <div class="mb-4">
+                <label for="rework_type" class="block text-sm font-medium text-gray-700">Тип ремонт *</label>
+                <select id="rework_type" name="rework_type" required
+                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">Изберете тип</option>
+                    <option value="polishing">Полиране</option>
+                    <option value="part_replacement">Смяна на части</option>
+                    <option value="cleaning">Почистване</option>
+                    <option value="adjustment">Регулиране</option>
+                    <option value="repair">Ремонт</option>
+                    <option value="other">Друго</option>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label for="technician" class="block text-sm font-medium text-gray-700">Техник *</label>
+                <input type="text" id="technician" name="technician" required
+                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="mb-4">
+                <label for="description" class="block text-sm font-medium text-gray-700">Описание</label>
+                <textarea id="description" name="description" rows="3"
+                          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+            </div>
+            <div class="mb-4">
+                <label for="parts_replaced" class="block text-sm font-medium text-gray-700">Сменени части</label>
+                <input type="text" id="parts_replaced" name="parts_replaced"
+                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="closeReworkModal()" 
+                        class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                <button type="submit" 
+                        class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Запази</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Maintenance Modal -->
+<div id="maintenanceModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Планирай поддръжка</h2>
+            <button onclick="closeMaintenanceModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+        </div>
+        
+        <!-- Tab Navigation -->
+        <div class="border-b border-gray-200 mb-4">
+            <nav class="-mb-px flex space-x-8">
+                <button id="dashboard-maintenance-tab" onclick="switchDashboardMaintenanceTab('maintenance')" 
+                        class="border-b-2 border-blue-500 text-blue-600 py-2 px-1 text-sm font-medium">
+                    Поддръжка
+                </button>
+                <button id="dashboard-technical-tab" onclick="switchDashboardMaintenanceTab('technical')" 
+                        class="border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 py-2 px-1 text-sm font-medium">
+                    Техническо обслужване
+                </button>
+            </nav>
+        </div>
+        
+        <!-- Maintenance Tab Content -->
+        <div id="dashboard-maintenance-tab-content">
+            <form id="maintenanceForm">
+                <input type="hidden" id="maintenance_mold_id" name="mold_id">
+                <div class="mb-4">
+                    <label for="maintenance_type" class="block text-sm font-medium text-gray-700">Тип поддръжка *</label>
+                    <select id="maintenance_type" name="maintenance_type" required
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Изберете тип</option>
+                        <option value="preventive">Профилактична</option>
+                        <option value="corrective">Корективна</option>
+                        <option value="emergency">Аварийна</option>
+                        <option value="scheduled">Планирана</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="scheduled_date" class="block text-sm font-medium text-gray-700">Планирана дата *</label>
+                    <input type="date" id="scheduled_date" name="scheduled_date" required
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label for="technician" class="block text-sm font-medium text-gray-700">Техник</label>
+                    <input type="text" id="technician" name="technician"
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label for="checklist_items" class="block text-sm font-medium text-gray-700">Чеклист</label>
+                    <textarea id="checklist_items" name="checklist_items" rows="3"
+                              class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+                </div>
+                <div class="mb-4">
+                    <label for="notes" class="block text-sm font-medium text-gray-700">Бележки/Инструкции</label>
+                    <textarea id="notes" name="notes" rows="3"
+                              class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button type="button" onclick="closeMaintenanceModal()" 
+                            class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                    <button type="submit" 
+                            class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Запази</button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Technical Maintenance Tab Content -->
+        <div id="dashboard-technical-tab-content" class="hidden">
+            <form id="dashboardTechnicalMaintenanceForm">
+                <input type="hidden" id="technical_maintenance_mold_id" name="mold_id">
+                <input type="hidden" name="maintenance_type" value="technical">
+                <div class="mb-4">
+                    <label for="dashboard_technical_scheduled_date" class="block text-sm font-medium text-gray-700">Планирана дата *</label>
+                    <input type="date" id="dashboard_technical_scheduled_date" name="scheduled_date" required
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label for="dashboard_technical_technician" class="block text-sm font-medium text-gray-700">Техник</label>
+                    <input type="text" id="dashboard_technical_technician" name="technician"
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div class="mb-4">
+                    <label for="dashboard_technical_checklist_items" class="block text-sm font-medium text-gray-700">Технически задачи</label>
+                    <textarea id="dashboard_technical_checklist_items" name="checklist_items" rows="3"
+                              class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="• Проверка на хидравличната система&#10;• Контрол на температурните сензори&#10;• Почистване на филтри&#10;• Проверка на електронните компоненти"></textarea>
+                </div>
+                <div class="mb-4">
+                    <label for="dashboard_technical_notes" class="block text-sm font-medium text-gray-700">Технически бележки</label>
+                    <textarea id="dashboard_technical_notes" name="notes" rows="3"
+                              class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="Специфични технически изисквания или инструкции..."></textarea>
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button type="button" onclick="closeMaintenanceModal()" 
+                            class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Отказ</button>
+                    <button type="submit" 
+                            class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Запази</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Problems Overview Modal -->
+<div id="problemsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Проблеми с матрицата</h2>
+            <button onclick="closeProblemsModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+        </div>
+        <div id="problemsModalContent">
+            <!-- Content will be loaded here -->
+        </div>
+    </div>
+</div>
+
+<script>
+let sortDirections = {};
+
+function sortTable(columnIndex, dataType) {
+    const table = document.getElementById('moldsTable');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    // Toggle sort direction
+    const currentDirection = sortDirections[columnIndex] || 'asc';
+    const newDirection = currentDirection === 'asc' ? 'desc' : 'asc';
+    sortDirections[columnIndex] = newDirection;
+    
+    // Update sort icons
+    updateSortIcons(columnIndex, newDirection);
+    
+    // Sort rows
+    rows.sort((a, b) => {
+        const aValue = getCellValue(a, columnIndex, dataType);
+        const bValue = getCellValue(b, columnIndex, dataType);
+        
+        if (dataType === 'number') {
+            return newDirection === 'asc' ? aValue - bValue : bValue - aValue;
+        } else {
+            return newDirection === 'asc' ? 
+                aValue.localeCompare(bValue) : 
+                bValue.localeCompare(aValue);
+        }
+    });
+    
+    // Re-append sorted rows
+    rows.forEach(row => tbody.appendChild(row));
+}
+
+function getCellValue(row, columnIndex, dataType) {
+    const cell = row.cells[columnIndex];
+    const text = cell.textContent.trim();
+    
+    if (dataType === 'number') {
+        // Handle remaining cycles column which might have negative values with "(превишени)"
+        if (columnIndex === 4) { // Remaining cycles column
+            // Extract number from text like "5,000 (превишени)" or just "5,000"
+            const match = text.match(/-?\d{1,3}(?:,\d{3})*/);
+            if (match) {
+                const numberText = match[0].replace(/,/g, '');
+                // If text contains "(превишени)", make it negative
+                return text.includes('(превишени)') ? -Math.abs(parseInt(numberText)) : parseInt(numberText);
+            }
+            return 0;
+        } else {
+            // Remove commas and convert to number for other columns
+            return parseInt(text.replace(/,/g, '')) || 0;
+        }
+    }
+    
+    return text;
+}
+
+function updateSortIcons(columnIndex, direction) {
+    // Reset all icons
+    document.getElementById('cycles-sort-icon').textContent = '⇅';
+    document.getElementById('threshold-sort-icon').textContent = '⇅';
+    document.getElementById('remaining-sort-icon').textContent = '⇅';
+    
+    // Update active column icon
+    let iconElement;
+    if (columnIndex === 2) {
+        iconElement = document.getElementById('cycles-sort-icon');
+    } else if (columnIndex === 3) {
+        iconElement = document.getElementById('threshold-sort-icon');
+    } else if (columnIndex === 4) {
+        iconElement = document.getElementById('remaining-sort-icon');
+    }
+    
+    if (iconElement) {
+        iconElement.textContent = direction === 'asc' ? '↑' : '↓';
+    }
+}
+
+function searchTable() {
+    const input = document.getElementById('searchInput');
+    const filter = input.value.toLowerCase();
+    const clearButton = document.getElementById('clearSearch');
+    
+    // Show/hide clear button
+    if (filter.length > 0) {
+        clearButton.classList.remove('hidden');
+    } else {
+        clearButton.classList.add('hidden');
+    }
+    
+    // Call the combined filter function
+    filterByStatus();
+}
+
+function clearSearch() {
+    const input = document.getElementById('searchInput');
+    const clearButton = document.getElementById('clearSearch');
+    const statusFilter = document.getElementById('statusFilter');
+    
+    input.value = '';
+    statusFilter.value = '';
+    clearButton.classList.add('hidden');
+    searchTable(); // Reset the table
+}
+
+function filterByStatus() {
+    const status = document.getElementById('statusFilter').value;
+    const table = document.getElementById('moldsTable');
+    const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+    for (let row of rows) {
+        let show = true;
+        if (status === 'problems_only') {
+            const problemCount = parseInt(row.getAttribute('data-problem-count')) || 0;
+            show = problemCount > 0;
+        } else if (status) {
+            const statusCell = row.cells[6];
+            if (statusCell) {
+                const cellText = statusCell.textContent.trim();
+                show = cellText === status;
+            }
+        }
+        row.style.display = show ? '' : 'none';
+    }
+}
+
+function showNoResultsMessage(show) {
+    let noResultsRow = document.getElementById('noResultsRow');
+    
+    if (show && !noResultsRow) {
+        // Create "No results" row
+        const tbody = document.getElementById('moldsTable').querySelector('tbody');
+        noResultsRow = document.createElement('tr');
+        noResultsRow.id = 'noResultsRow';
+        noResultsRow.innerHTML = `
+            <td colspan="9" class="px-6 py-4 text-center text-gray-500 italic">
+                Няма намерени резултати за вашето търсене
+            </td>
+        `;
+        tbody.appendChild(noResultsRow);
+    } else if (!show && noResultsRow) {
+        // Remove "No results" row
+        noResultsRow.remove();
+    }
+}
+
+// Modal functions for Rework
+function openReworkModal(moldId, moldName) {
+    document.getElementById('rework_mold_id').value = moldId;
+    document.getElementById('reworkModal').classList.remove('hidden');
+}
+
+function closeReworkModal() {
+    document.getElementById('reworkModal').classList.add('hidden');
+    document.getElementById('reworkForm').reset();
+}
+
+// Modal functions for Maintenance
+function openMaintenanceModal(moldId, moldName) {
+    document.getElementById('maintenance_mold_id').value = moldId;
+    document.getElementById('technical_maintenance_mold_id').value = moldId;
+    document.getElementById('maintenanceModal').classList.remove('hidden');
+}
+
+function closeMaintenanceModal() {
+    document.getElementById('maintenanceModal').classList.add('hidden');
+    document.getElementById('maintenanceForm').reset();
+}
+
+// Handle form submissions
+document.getElementById('reworkForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    
+    fetch('/add_rework', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert(data.message);
+            closeReworkModal();
+            location.reload(); // Refresh to show updated data
+        } else {
+            alert('Грешка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Възникна грешка при запазването');
+    });
+});
+
+document.getElementById('maintenanceForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    
+    // Convert date from YYYY-MM-DD to DD-MM-YYYY format
+    const dateInput = document.getElementById('scheduled_date').value;
+    if (dateInput) {
+        const [year, month, day] = dateInput.split('-');
+        const convertedDate = `${day}-${month}-${year}`;
+        formData.set('scheduled_date', convertedDate);
+    }
+    
+    fetch('/add_maintenance', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert(data.message);
+            closeMaintenanceModal();
+            location.reload(); // Refresh to show updated data
+        } else {
+            alert('Грешка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Възникна грешка при запазването');
+    });
+});
+
+// Close modals when clicking outside
+document.getElementById('reworkModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeReworkModal();
+    }
+});
+
+document.getElementById('maintenanceModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeMaintenanceModal();
+    }
+});
+
+// Problems Modal functions
+function showProblemsModal(moldId) {
+    fetch(`/get_mold_problems/${moldId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                displayProblemsModal(data.mold_info, data.problems);
+            } else {
+                alert('Грешка: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Възникна грешка при зареждането на проблемите');
+        });
+}
+
+function displayProblemsModal(moldInfo, problems) {
+    const content = document.getElementById('problemsModalContent');
+    
+    let html = `
+        <div class="mb-4">
+            <h3 class="text-lg font-semibold text-gray-800">${moldInfo.mold_name} (${moldInfo.mold_number})</h3>
+            <p class="text-sm text-gray-600">Продукт: ${moldInfo.product_name}</p>
+        </div>
+    `;
+    
+    if (problems.length > 0) {
+        html += `
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Дата</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Проблем</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Инспектор</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Описание</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Коментари</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+        `;
+        
+        problems.forEach(problem => {
+            html += `
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${problem.report_date}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${problem.problem_type}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${problem.inspector}</td>
+                    <td class="px-6 py-4 text-sm text-gray-900">${problem.description || '-'}</td>
+                    <td class="px-6 py-4 text-sm text-gray-900">${problem.comments || '-'}</td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+    } else {
+        html += `
+            <div class="text-center py-8">
+                <p class="text-gray-500">Няма записани проблеми за тази матрица.</p>
+            </div>
+        `;
+    }
+    
+    content.innerHTML = html;
+    document.getElementById('problemsModal').classList.remove('hidden');
+}
+
+function closeProblemsModal() {
+    document.getElementById('problemsModal').classList.add('hidden');
+}
+
+// Close problems modal when clicking outside
+document.getElementById('problemsModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeProblemsModal();
+    }
+});
+
+// Tab functions for Maintenance Modal
+function switchDashboardMaintenanceTab(tabName) {
+    const maintenanceTabContent = document.getElementById('dashboard-maintenance-tab-content');
+    const technicalTabContent = document.getElementById('dashboard-technical-tab-content');
+    const maintenanceTabButton = document.getElementById('dashboard-maintenance-tab');
+    const technicalTabButton = document.getElementById('dashboard-technical-tab');
+
+    if (tabName === 'maintenance') {
+        maintenanceTabContent.classList.remove('hidden');
+        technicalTabContent.classList.add('hidden');
+        maintenanceTabButton.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
+        maintenanceTabButton.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        technicalTabButton.classList.remove('border-b-2', 'border-blue-500', 'text-blue-600');
+        technicalTabButton.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+    } else if (tabName === 'technical') {
+        maintenanceTabContent.classList.add('hidden');
+        technicalTabContent.classList.remove('hidden');
+        maintenanceTabButton.classList.remove('border-b-2', 'border-blue-500', 'text-blue-600');
+        maintenanceTabButton.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        technicalTabButton.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
+        technicalTabButton.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+    }
+}
+
+// Handle form submissions for technical maintenance
+document.getElementById('dashboardTechnicalMaintenanceForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    
+    // Convert date from YYYY-MM-DD to DD-MM-YYYY format (same as regular maintenance)
+    const dateInput = document.getElementById('dashboard_technical_scheduled_date').value;
+    if (dateInput) {
+        const [year, month, day] = dateInput.split('-');
+        const convertedDate = `${day}-${month}-${year}`;
+        formData.set('scheduled_date', convertedDate);
+    }
+    
+    fetch('/add_maintenance', { // Reusing the same endpoint for technical maintenance
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert(data.message);
+            closeMaintenanceModal();
+            location.reload(); // Refresh to show updated data
+        } else {
+            alert('Грешка: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Възникна грешка при запазването');
+    });
+});
+
+let problemsSortDesc = true;
+function sortByProblems() {
+    const table = document.getElementById('moldsTable').getElementsByTagName('tbody')[0];
+    const rows = Array.from(table.getElementsByTagName('tr'));
+    rows.sort((a, b) => {
+        const aCount = parseInt(a.getAttribute('data-problem-count')) || 0;
+        const bCount = parseInt(b.getAttribute('data-problem-count')) || 0;
+        return problemsSortDesc ? bCount - aCount : aCount - bCount;
+    });
+    rows.forEach(row => table.appendChild(row));
+    problemsSortDesc = !problemsSortDesc;
+    document.getElementById('problems-sort-icon').textContent = problemsSortDesc ? '⇅' : '⇵';
+}
+
+</script>
+
+
+
+{% endblock %} 

@@ -165,7 +165,7 @@ def init_db():
         if 'shift' not in columns:
             cursor.execute("ALTER TABLE measurements ADD COLUMN shift TEXT")
         if 'submission_id' not in columns:
-            cursor.execute("ALTER TABLE measurements ADD COLUMN submission_id TEXT UNIQUE")
+            cursor.execute("ALTER TABLE measurements ADD COLUMN submission_id TEXT")
         cursor.execute("SELECT COUNT(*) FROM users WHERE username='admin'")
         if cursor.fetchone()[0] == 0:
             # Use environment variable for admin password or generate a secure default

@@ -61,11 +61,23 @@
             <div>
                 <label for="drawing_path" class="block text-sm font-medium text-gray-700">Път до чертеж (основен)</label>
                 <div class="flex space-x-2">
-                    <select id="drawing_path" name="drawing_path"
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Без чертеж</option>
-                        <!-- Options populated by JavaScript -->
-                    </select>
+                    <div class="relative flex-1">
+                        <input type="text" id="drawing_path_search" placeholder="Търсете чертеж..." 
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 pr-8">
+                        <div class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                        </div>
+                        <select id="drawing_path" name="drawing_path" class="hidden">
+                            <option value="">Без чертеж</option>
+                        </select>
+                        <div id="drawing_path_dropdown" class="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none hidden">
+                            <div class="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-blue-50" data-value="">
+                                <span class="block truncate">Без чертеж</span>
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" onclick="openUploadModal(1)" 
                             class="mt-1 bg-green-500 text-white px-3 py-2 rounded hover:bg-green-600 text-sm">Качи чертеж</button>
                 </div>
@@ -73,11 +85,23 @@
             <div>
                 <label for="drawing_path_2" class="block text-sm font-medium text-gray-700">Път до чертеж (втори, по избор)</label>
                 <div class="flex space-x-2">
-                    <select id="drawing_path_2" name="drawing_path_2"
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Без чертеж</option>
-                        <!-- Options populated by JavaScript -->
-                    </select>
+                    <div class="relative flex-1">
+                        <input type="text" id="drawing_path_2_search" placeholder="Търсете чертеж..." 
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 pr-8">
+                        <div class="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                        </div>
+                        <select id="drawing_path_2" name="drawing_path_2" class="hidden">
+                            <option value="">Без чертеж</option>
+                        </select>
+                        <div id="drawing_path_2_dropdown" class="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none hidden">
+                            <div class="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-blue-50" data-value="">
+                                <span class="block truncate">Без чертеж</span>
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" onclick="openUploadModal(2)" 
                             class="mt-1 bg-green-500 text-white px-3 py-2 rounded hover:bg-green-600 text-sm">Качи чертеж</button>
                 </div>
@@ -87,10 +111,46 @@
     </form>
     {% endif %}
 
+    <!-- Search Bar -->
+    <div class="mb-6 bg-white p-4 rounded shadow">
+        <form method="GET" class="flex items-center space-x-4">
+            <div class="flex-1">
+                <label for="search" class="block text-sm font-medium text-gray-700 mb-2">Търсене в продукти</label>
+                <input type="text" id="search" name="search" value="{{ search }}" 
+                       placeholder="Търсете по име на продукт, номер на чертеж или коментари..."
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div class="flex space-x-2">
+                <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                    Търси
+                </button>
+                {% if search %}
+                <a href="{{ url_for('products') }}" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
+                    Изчисти
+                </a>
+                {% endif %}
+            </div>
+        </form>
+        
+        <!-- Results info -->
+        {% if search %}
+        <div class="mt-2 text-sm text-gray-600">
+            Показани {{ products|length }} от {{ total }} резултата за "{{ search }}"
+        </div>
+        {% else %}
+        <div class="mt-2 text-sm text-gray-600">
+            Показани {{ products|length }} от {{ total }} продукта (Страница {{ page }} от {{ total_pages }})
+        </div>
+        {% endif %}
+    </div>
+
     <!-- Products Table -->
     <div class="bg-white p-4 rounded shadow">
         <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
+            <table id="productsTable" class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
                 <tr>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
@@ -130,7 +190,23 @@
                             </div>
                         {% endif %}
                         {% if not product.drawing_path and not product.drawing_path_2 %}
-                            None
+                            <span class="text-gray-400">None</span>
+                            {% if role == 'admin' %}
+                            <div class="mt-2">
+                                <button type="button" class="text-green-600 hover:text-green-800 text-xs mr-2" onclick="openAddDrawingModal({{ product.id }}, 1)">Add Drawing 1</button>
+                                <button type="button" class="text-green-600 hover:text-green-800 text-xs" onclick="openAddDrawingModal({{ product.id }}, 2)">Add Drawing 2</button>
+                            </div>
+                            {% endif %}
+                        {% elif not product.drawing_path %}
+                            <div class="text-gray-400">Slot 1: None</div>
+                            {% if role == 'admin' %}
+                            <button type="button" class="text-green-600 hover:text-green-800 text-xs ml-2" onclick="openAddDrawingModal({{ product.id }}, 1)">Add Drawing 1</button>
+                            {% endif %}
+                        {% elif not product.drawing_path_2 %}
+                            <div class="text-gray-400 mt-1">Slot 2: None</div>
+                            {% if role == 'admin' %}
+                            <button type="button" class="text-green-600 hover:text-green-800 text-xs ml-2" onclick="openAddDrawingModal({{ product.id }}, 2)">Add Drawing 2</button>
+                            {% endif %}
                         {% endif %}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -161,6 +237,73 @@
             </tbody>
         </table>
         </div>
+        
+        <!-- Pagination Controls -->
+        {% if total_pages > 1 %}
+        <div class="mt-6 flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+            <div class="flex flex-1 justify-between sm:hidden">
+                {% if has_prev %}
+                <a href="{{ url_for('products', page=page-1, search=search) }}" 
+                   class="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    Предишна
+                </a>
+                {% endif %}
+                {% if has_next %}
+                <a href="{{ url_for('products', page=page+1, search=search) }}" 
+                   class="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    Следваща
+                </a>
+                {% endif %}
+            </div>
+            <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm text-gray-700">
+                        Показани от <span class="font-medium">{{ ((page-1) * 50) + 1 }}</span> до 
+                        <span class="font-medium">{{ ((page-1) * 50) + products|length }}</span> от 
+                        <span class="font-medium">{{ total }}</span> резултата
+                    </p>
+                </div>
+                <div>
+                    <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                        {% if has_prev %}
+                        <a href="{{ url_for('products', page=page-1, search=search) }}" 
+                           class="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
+                            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd" />
+                            </svg>
+                        </a>
+                        {% endif %}
+                        
+                        {% for page_num in range(1, total_pages + 1) %}
+                            {% if page_num == page %}
+                            <span class="relative z-10 inline-flex items-center bg-blue-600 px-4 py-2 text-sm font-semibold text-white focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600">
+                                {{ page_num }}
+                            </span>
+                            {% elif page_num <= 3 or page_num >= total_pages - 2 or (page_num >= page - 1 and page_num <= page + 1) %}
+                            <a href="{{ url_for('products', page=page_num, search=search) }}" 
+                               class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
+                                {{ page_num }}
+                            </a>
+                            {% elif page_num == 4 and page > 5 %}
+                            <span class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 focus:outline-offset-0">...</span>
+                            {% elif page_num == total_pages - 3 and page < total_pages - 4 %}
+                            <span class="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 focus:outline-offset-0">...</span>
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if has_next %}
+                        <a href="{{ url_for('products', page=page+1, search=search) }}" 
+                           class="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0">
+                            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
+                            </svg>
+                        </a>
+                        {% endif %}
+                    </nav>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Dimensions Modal -->
@@ -263,58 +406,366 @@
             </form>
         </div>
     </div>
+
+    <!-- Add Drawing Modal -->
+    <div id="addDrawingModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded shadow-lg w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Add Drawing</h2>
+                <button onclick="closeAddDrawingModal()" class="text-gray-600 hover:text-gray-800">&times;</button>
+            </div>
+            <form id="addDrawingForm" enctype="multipart/form-data" class="space-y-4">
+                <input type="hidden" id="add_product_id" name="product_id">
+                <input type="hidden" id="add_drawing_slot" name="drawing_slot">
+                <div>
+                    <label for="add_drawing_file" class="block text-sm font-medium text-gray-700">Select PDF File</label>
+                    <input type="file" id="add_drawing_file" name="drawing_file" accept=".pdf" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <p class="mt-1 text-sm text-gray-500">Only PDF files are allowed</p>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" onclick="closeAddDrawingModal()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Cancel</button>
+                    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Add Drawing</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+// Global array to store all available drawings
+let allDrawings = [];
+
+// Global function to populate both drawing path dropdowns
+function populateDrawingPath() {
     const drawingPathSelect = document.getElementById('drawing_path');
     const drawingPathSelect2 = document.getElementById('drawing_path_2');
-
-    // Function to populate both drawing path dropdowns
-    function populateDrawingPath() {
-        fetch('/get_drawings')
-            .then(response => response.json())
-            .then(pdfFiles => {
-                // Save current values
-                const currentValue = drawingPathSelect.value;
-                const currentValue2 = drawingPathSelect2.value;
-                
-                // Clear and populate first dropdown
-                drawingPathSelect.innerHTML = '<option value="">Без чертеж</option>';
-                pdfFiles.forEach(file => {
-                    const option = document.createElement('option');
-                    option.value = `drawings/${file}`; // Store full path with drawings/ prefix
-                    option.textContent = file; // Display just the filename
-                    if (`drawings/${file}` === currentValue) {
-                        option.selected = true;
-                    }
-                    drawingPathSelect.appendChild(option);
-                });
-                
-                // Clear and populate second dropdown
-                drawingPathSelect2.innerHTML = '<option value="">Без чертеж</option>';
-                pdfFiles.forEach(file => {
-                    const option = document.createElement('option');
-                    option.value = `drawings/${file}`; // Store full path with drawings/ prefix
-                    option.textContent = file; // Display just the filename
-                    if (`drawings/${file}` === currentValue2) {
-                        option.selected = true;
-                    }
-                    drawingPathSelect2.appendChild(option);
-                });
-            })
-            .catch(error => {
-                console.error('Error fetching PDF files:', error);
-                drawingPathSelect.innerHTML = '<option value="">Error loading PDFs</option>';
-                drawingPathSelect2.innerHTML = '<option value="">Error loading PDFs</option>';
-            });
+    
+    if (!drawingPathSelect || !drawingPathSelect2) {
+        console.log('Drawing path selects not found, skipping population');
+        return;
     }
+    
+    fetch('/get_drawings')
+        .then(response => response.json())
+        .then(pdfFiles => {
+            // Store all drawings globally for search functionality
+            allDrawings = pdfFiles;
+            
+            // Save current values
+            const currentValue = drawingPathSelect.value;
+            const currentValue2 = drawingPathSelect2.value;
+            
+            // Populate both dropdowns
+            populateSearchableDropdown('drawing_path', pdfFiles, currentValue);
+            populateSearchableDropdown('drawing_path_2', pdfFiles, currentValue2);
+        })
+        .catch(error => {
+            console.error('Error fetching PDF files:', error);
+            allDrawings = [];
+        });
+}
 
+// Function to populate a searchable dropdown
+function populateSearchableDropdown(dropdownId, files, selectedValue = '') {
+    const dropdown = document.getElementById(dropdownId + '_dropdown');
+    const hiddenSelect = document.getElementById(dropdownId);
+    const searchInput = document.getElementById(dropdownId + '_search');
+    
+    if (!dropdown || !hiddenSelect || !searchInput) return;
+    
+    // Clear existing options
+    dropdown.innerHTML = '';
+    hiddenSelect.innerHTML = '<option value="">Без чертеж</option>';
+    
+    // Add "No drawing" option
+    const noDrawingDiv = document.createElement('div');
+    noDrawingDiv.className = 'cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-blue-50';
+    noDrawingDiv.setAttribute('data-value', '');
+    noDrawingDiv.innerHTML = '<span class="block truncate">Без чертеж</span>';
+    if (selectedValue === '') {
+        noDrawingDiv.classList.add('bg-blue-100');
+        searchInput.value = 'Без чертеж';
+    }
+    dropdown.appendChild(noDrawingDiv);
+    
+    // Add file options
+    files.forEach(file => {
+        const fileValue = `drawings/${file}`;
+        
+        // Add to hidden select for form submission
+        const option = document.createElement('option');
+        option.value = fileValue;
+        option.textContent = file;
+        if (fileValue === selectedValue) {
+            option.selected = true;
+        }
+        hiddenSelect.appendChild(option);
+        
+        // Add to dropdown
+        const fileDiv = document.createElement('div');
+        fileDiv.className = 'cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-blue-50';
+        fileDiv.setAttribute('data-value', fileValue);
+        fileDiv.innerHTML = `<span class="block truncate">${file}</span>`;
+        if (fileValue === selectedValue) {
+            fileDiv.classList.add('bg-blue-100');
+            searchInput.value = file;
+        }
+        dropdown.appendChild(fileDiv);
+    });
+}
+
+// Function to filter dropdown options based on search
+function filterDrawings(dropdownId, searchTerm) {
+    const dropdown = document.getElementById(dropdownId + '_dropdown');
+    if (!dropdown) return;
+    
+    const items = dropdown.querySelectorAll('[data-value]');
+    let visibleCount = 0;
+    
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        const matches = text.includes(searchTerm.toLowerCase());
+        
+        if (matches) {
+            item.style.display = 'block';
+            visibleCount++;
+        } else {
+            item.style.display = 'none';
+        }
+    });
+    
+    // Always show "No drawing" option
+    const noDrawingItem = dropdown.querySelector('[data-value=""]');
+    if (noDrawingItem) {
+        noDrawingItem.style.display = 'block';
+    }
+}
+
+// Function to setup searchable dropdown functionality
+function setupSearchableDropdown(dropdownId) {
+    const searchInput = document.getElementById(dropdownId + '_search');
+    const dropdown = document.getElementById(dropdownId + '_dropdown');
+    const hiddenSelect = document.getElementById(dropdownId);
+    
+    if (!searchInput || !dropdown || !hiddenSelect) return;
+    
+    // Show dropdown on focus
+    searchInput.addEventListener('focus', () => {
+        dropdown.classList.remove('hidden');
+    });
+    
+    // Filter on input
+    searchInput.addEventListener('input', (e) => {
+        filterDrawings(dropdownId, e.target.value);
+        dropdown.classList.remove('hidden');
+    });
+    
+    // Handle item selection
+    dropdown.addEventListener('click', (e) => {
+        const item = e.target.closest('[data-value]');
+        if (!item) return;
+        
+        const value = item.getAttribute('data-value');
+        const text = item.textContent.trim();
+        
+        // Update search input
+        searchInput.value = text;
+        
+        // Update hidden select
+        hiddenSelect.value = value;
+        
+        // Update visual selection
+        dropdown.querySelectorAll('[data-value]').forEach(el => {
+            el.classList.remove('bg-blue-100');
+        });
+        item.classList.add('bg-blue-100');
+        
+        // Hide dropdown
+        dropdown.classList.add('hidden');
+    });
+    
+    // Hide dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.classList.add('hidden');
+        }
+    });
+    
+    // Handle keyboard navigation
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            dropdown.classList.add('hidden');
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            dropdown.classList.remove('hidden');
+            const firstVisible = dropdown.querySelector('[data-value]:not([style*="display: none"])');
+            if (firstVisible) firstVisible.focus();
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
     // Initial population
     populateDrawingPath();
+    
+    // Setup searchable functionality for both dropdowns
+    setupSearchableDropdown('drawing_path');
+    setupSearchableDropdown('drawing_path_2');
 
     // Poll every 5 seconds to refresh dropdown
     setInterval(populateDrawingPath, 5000);
+
+    // Function to check for duplicate products (case-insensitive)
+    function checkDuplicateProduct(productName, drawingNumber) {
+        console.log('checkDuplicateProduct called with:', productName, drawingNumber);
+        // Get all existing products from the table
+        const productRows = document.querySelectorAll('#productsTable tbody tr');
+        console.log('Found product rows:', productRows.length);
+        
+        for (let row of productRows) {
+            const existingName = row.cells[1].textContent.trim().toLowerCase();
+            const existingDrawing = row.cells[2].textContent.trim().toLowerCase();
+            console.log('Comparing:', productName.trim().toLowerCase(), 'vs', existingName, 'and', drawingNumber.trim().toLowerCase(), 'vs', existingDrawing);
+            
+            if (existingName === productName.trim().toLowerCase() && existingDrawing === drawingNumber.trim().toLowerCase()) {
+                return {
+                    exists: true,
+                    existingName: row.cells[1].textContent.trim(),
+                    existingDrawing: row.cells[2].textContent.trim()
+                };
+            }
+        }
+        
+        return { exists: false };
+    }
+    
+    // Add real-time validation to product form
+    const productForm = document.querySelector('form[action="/products"]');
+    if (productForm) {
+        const productNameInput = document.getElementById('product_name');
+        const drawingNumberInput = document.getElementById('drawing_number');
+        const submitButton = productForm.querySelector('button[type="submit"]');
+        
+        function validateProduct() {
+            console.log('validateProduct called');
+            if (!productNameInput || !drawingNumberInput) {
+                console.log('Input elements not found');
+                return;
+            }
+            
+            const productName = productNameInput.value.trim();
+            const drawingNumber = drawingNumberInput.value.trim();
+            console.log('Validating:', productName, drawingNumber);
+            
+            if (productName && drawingNumber) {
+                const duplicate = checkDuplicateProduct(productName, drawingNumber);
+                console.log('Duplicate result:', duplicate);
+                
+                // Remove existing error messages
+                document.querySelectorAll('.duplicate-error').forEach(el => el.remove());
+                
+                if (duplicate.exists) {
+                    // Show prominent error message below the form
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'duplicate-error mt-4 p-4 bg-red-50 border-l-4 border-red-400 text-red-800 rounded shadow-md';
+                    errorDiv.innerHTML = `
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <svg class="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-red-800">Дублиран продукт!</h3>
+                                <div class="mt-1 text-sm text-red-700">
+                                    Продукт с това име и номер на чертеж вече съществува:<br>
+                                    <strong>"${duplicate.existingName}"</strong> с номер <strong>"${duplicate.existingDrawing}"</strong>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    drawingNumberInput.parentNode.appendChild(errorDiv);
+                    
+                    // Also show a toast notification
+                    showToast('Не можете да добавите дублиран продукт!', 'error');
+                    
+                    submitButton.disabled = true;
+                    submitButton.classList.add('opacity-50', 'cursor-not-allowed');
+                    submitButton.textContent = 'Дублиран продукт - не може да се добави';
+                    
+                    return false;
+                } else {
+                    submitButton.disabled = false;
+                    submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                    submitButton.textContent = 'Добави продукт';
+                    return true;
+                }
+            }
+            
+            return true;
+        }
+        
+        // Add event listeners for real-time validation
+        if (productNameInput) {
+            productNameInput.addEventListener('blur', validateProduct);
+            productNameInput.addEventListener('input', () => {
+                setTimeout(validateProduct, 300); // Debounce
+            });
+        }
+        
+        if (drawingNumberInput) {
+            drawingNumberInput.addEventListener('blur', validateProduct);
+            drawingNumberInput.addEventListener('input', () => {
+                setTimeout(validateProduct, 300); // Debounce
+            });
+        }
+        
+        // Validate on form submission
+        productForm.addEventListener('submit', function(e) {
+            if (!validateProduct()) {
+                e.preventDefault();
+                
+                // Show a more prominent modal-style alert
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50';
+                alertDiv.innerHTML = `
+                    <div class="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+                        <div class="flex items-center mb-4">
+                            <div class="flex-shrink-0">
+                                <svg class="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-lg font-medium text-gray-900">Дублиран продукт!</h3>
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <p class="text-sm text-gray-700">
+                                Не можете да добавите дублиран продукт. Моля, променете името или номера на чертежа.
+                            </p>
+                        </div>
+                        <div class="flex justify-end">
+                            <button onclick="this.closest('.fixed').remove()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                                Разбрах
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(alertDiv);
+                
+                // Auto-remove after 5 seconds
+                setTimeout(() => {
+                    if (alertDiv.parentNode) {
+                        alertDiv.remove();
+                    }
+                }, 5000);
+                
+                return false;
+            }
+        });
+    }
 
     // Handle add dimension form submission
     document.getElementById('addDimensionForm').addEventListener('submit', function(e) {
@@ -578,8 +1029,20 @@ function closeUploadModal() {
 }
 
 // Handle file upload
+let isUploading = false;
+
 document.getElementById('uploadForm').addEventListener('submit', function(e) {
     e.preventDefault();
+    console.log('Upload form submitted');
+    
+    // Prevent double submission
+    if (isUploading) {
+        console.log('Upload already in progress, ignoring duplicate submission');
+        return;
+    }
+    
+    isUploading = true;
+    
     const formData = new FormData(this);
     // Ensure drawing_slot is included
     formData.set('drawing_slot', currentDrawingSlot);
@@ -587,6 +1050,7 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     
     if (!fileInput.files[0]) {
         alert('Please select a file to upload');
+        isUploading = false;
         return;
     }
     
@@ -594,21 +1058,43 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     const file = fileInput.files[0];
     if (!file.type.includes('pdf')) {
         alert('Only PDF files are allowed');
+        isUploading = false;
         return;
     }
     
     // Check file size (max 10MB)
     if (file.size > 10 * 1024 * 1024) {
         alert('File size must be less than 10MB');
+        isUploading = false;
         return;
     }
     
+    console.log('Sending upload request to /upload_drawing');
     fetch('/upload_drawing', {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('Upload response received:', response.status, response.statusText);
+        console.log('Response headers:', response.headers);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        return response.text().then(text => {
+            console.log('Raw response text:', text);
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                console.error('JSON parse error:', e);
+                console.error('Response text that failed to parse:', text);
+                throw new Error('Invalid JSON response from server');
+            }
+        });
+    })
     .then(data => {
+        console.log('Upload response data:', data);
         if (data.status === 'success') {
             alert('Drawing uploaded successfully!');
             closeUploadModal();
@@ -619,8 +1105,11 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('Error uploading file');
+        console.error('Upload error:', error);
+        alert('Error uploading file: ' + error.message);
+    })
+    .finally(() => {
+        isUploading = false;
     });
 });
 
@@ -690,5 +1179,66 @@ function deleteDrawing(productId, drawingPath, btn, drawingSlot = 1) {
         alert('Error deleting drawing');
     });
 }
+
+// Add Drawing Modal Functions
+function openAddDrawingModal(productId, drawingSlot = 1) {
+    if (productId === 'new') {
+        alert('Моля, първо създайте продукта, след което добавете чертежа от таблицата с продукти.');
+        return;
+    }
+    document.getElementById('add_product_id').value = productId;
+    document.getElementById('add_drawing_slot').value = drawingSlot;
+    document.getElementById('addDrawingForm').reset();
+    document.getElementById('addDrawingModal').classList.remove('hidden');
+}
+
+function closeAddDrawingModal() {
+    document.getElementById('addDrawingModal').classList.add('hidden');
+    document.getElementById('addDrawingForm').reset();
+}
+
+// Handle add drawing form submission
+document.getElementById('addDrawingForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const fileInput = document.getElementById('add_drawing_file');
+    
+    if (!fileInput.files[0]) {
+        alert('Please select a file to upload');
+        return;
+    }
+    
+    // Check file type
+    const file = fileInput.files[0];
+    if (!file.type.includes('pdf')) {
+        alert('Only PDF files are allowed');
+        return;
+    }
+    
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        alert('File size must be less than 10MB');
+        return;
+    }
+    
+    fetch('/add_drawing_to_product', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Drawing added successfully!');
+            closeAddDrawingModal();
+            location.reload(); // Refresh to show the new drawing
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error adding drawing');
+    });
+});
 </script>
 {% endblock %}

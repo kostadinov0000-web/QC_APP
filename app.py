@@ -3,7 +3,7 @@ import hashlib
 import os
 import uuid
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, send_file, send_from_directory
 import pandas as pd
 import re
@@ -164,6 +164,8 @@ def init_db():
             cursor.execute("ALTER TABLE measurements ADD COLUMN count INTEGER")
         if 'shift' not in columns:
             cursor.execute("ALTER TABLE measurements ADD COLUMN shift TEXT")
+        if 'submission_id' not in columns:
+            cursor.execute("ALTER TABLE measurements ADD COLUMN submission_id TEXT UNIQUE")
         cursor.execute("SELECT COUNT(*) FROM users WHERE username='admin'")
         if cursor.fetchone()[0] == 0:
             # Use environment variable for admin password or generate a secure default
@@ -253,6 +255,16 @@ def convert_to_iso_date(local_date):
     except ValueError:
         raise ValueError("Invalid date format. Use YYYY-MM-DD or DD-MM-YYYY.")
 
+def get_bulgarian_time():
+    """Get current time in Bulgarian timezone"""
+    # Server is in Amsterdam (UTC+1), Bulgaria is UTC+2, so we need +1 hour from server time
+    # During DST: Amsterdam UTC+2, Bulgaria UTC+3, still +1 hour difference
+    return datetime.now() + timedelta(hours=1)
+
+def get_bulgarian_time_string():
+    """Get current Bulgarian time as string for database storage"""
+    return get_bulgarian_time().strftime("%Y-%m-%d %H:%M:%S")
+
 def convert_to_local_date(iso_date):
     try:
         # Try to parse with time first
@@ -271,13 +283,13 @@ def check_session_timeout():
         # Check if last_activity exists and if session has expired
         if 'last_activity' in session:
             last_activity = datetime.fromisoformat(session['last_activity'])
-            if datetime.now() - last_activity > app.config['PERMANENT_SESSION_LIFETIME']:
+            if get_bulgarian_time() - last_activity > app.config['PERMANENT_SESSION_LIFETIME']:
                 session.clear()
                 flash('Your session has expired due to inactivity. Please log in again.', 'warning')
                 return True
         
         # Update last activity time
-        session['last_activity'] = datetime.now().isoformat()
+        session['last_activity'] = get_bulgarian_time().isoformat()
         session.permanent = True
     
     return False
@@ -293,7 +305,7 @@ def require_login():
         return redirect(url_for('login'))
     
     # Check if user is logged in
-    if request.endpoint not in ['login', 'static', 'get_product', 'serve_drawing', 'get_drawings', 'serve_pdfjs', 'debug_pdf', 'debug_pdf_viewer', 'upload_drawing', 'session_status'] and 'user' not in session:
+    if request.endpoint not in ['login', 'static', 'get_product', 'serve_drawing', 'get_drawings', 'serve_pdfjs', 'debug_pdf', 'debug_pdf_viewer', 'upload_drawing', 'add_drawing_to_product', 'view_tolerance_table', 'session_status'] and 'user' not in session:
         return redirect(url_for('login'))
 
 @app.route('/')
@@ -317,7 +329,7 @@ def login():
             if user and user['password_hash'] == hash_password(password):
                 session['user'] = username
                 session['role'] = user['role']
-                session['last_activity'] = datetime.now().isoformat()
+                session['last_activity'] = get_bulgarian_time().isoformat()
                 session.permanent = True
                 return redirect(url_for('dashboard'))
             flash('Невалидно потребителско име или парола', 'error')
@@ -338,7 +350,7 @@ def session_status():
     # Check if session has expired
     if 'last_activity' in session:
         last_activity = datetime.fromisoformat(session['last_activity'])
-        time_left = app.config['PERMANENT_SESSION_LIFETIME'] - (datetime.now() - last_activity)
+        time_left = app.config['PERMANENT_SESSION_LIFETIME'] - (get_bulgarian_time() - last_activity)
         
         if time_left.total_seconds() <= 0:
             session.clear()
@@ -363,49 +375,101 @@ def products():
         flash('Достъп отказан. Необходими са администраторски права.', 'error')
         return redirect(url_for('dashboard'))
     
+    # Get pagination and search parameters
+    page = request.args.get('page', 1, type=int)
+    search = request.args.get('search', '', type=str)
+    per_page = 50  # Products per page
+    
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, product_name, drawing_number, drawing_path, drawing_path_2, comments FROM products")
-        products = cursor.fetchall()
+        
+        # Build search query
+        if search:
+            search_pattern = f"%{search}%"
+            count_query = "SELECT COUNT(*) FROM products WHERE product_name LIKE ? OR drawing_number LIKE ? OR comments LIKE ?"
+            products_query = """SELECT id, product_name, drawing_number, drawing_path, drawing_path_2, comments 
+                               FROM products 
+                               WHERE product_name LIKE ? OR drawing_number LIKE ? OR comments LIKE ?
+                               ORDER BY product_name 
+                               LIMIT ? OFFSET ?"""
+            cursor.execute(count_query, (search_pattern, search_pattern, search_pattern))
+            total = cursor.fetchone()[0]
+            
+            offset = (page - 1) * per_page
+            cursor.execute(products_query, (search_pattern, search_pattern, search_pattern, per_page, offset))
+            products = cursor.fetchall()
+        else:
+            cursor.execute("SELECT COUNT(*) FROM products")
+            total = cursor.fetchone()[0]
+            
+            offset = (page - 1) * per_page
+            cursor.execute("SELECT id, product_name, drawing_number, drawing_path, drawing_path_2, comments FROM products ORDER BY product_name LIMIT ? OFFSET ?", (per_page, offset))
+            products = cursor.fetchall()
+        
+        # Calculate pagination info
+        total_pages = (total + per_page - 1) // per_page
+        has_prev = page > 1
+        has_next = page < total_pages
         if request.method == 'POST':
             action = request.form.get('action')
 
             if action == 'add_product':
                 try:
-                    product_name = request.form['product_name']
-                    drawing_number = request.form['drawing_number']
+                    product_name = request.form['product_name'].strip()
+                    drawing_number = request.form['drawing_number'].strip()
                 except KeyError as e:
                     logger.error(f"Missing form field: {e}")
                     flash(f'Липсва задължително поле: {e}', 'error')
-                    return render_template('products.html', products=products, role=session.get('role'))
+                    return render_template('products.html', 
+                                         products=products, 
+                                         role=session.get('role'),
+                                         page=page,
+                                         total_pages=total_pages,
+                                         has_prev=has_prev,
+                                         has_next=has_next,
+                                         search=search,
+                                         total=total)
                 drawing_path = request.form.get('drawing_path', '')
                 drawing_path_2 = request.form.get('drawing_path_2', '')
                 if not product_name or not drawing_number:
                     flash('Името на продукта и номерът на чертежа са задължителни', 'error')
                 else:
-                    # Normalize drawing_path
-                    if drawing_path and not drawing_path.startswith('http'):
-                        drawing_path = f'drawings/{drawing_path}' if not drawing_path.startswith('drawings/') else drawing_path
-                    if drawing_path_2 and not drawing_path_2.startswith('http'):
-                        drawing_path_2 = f'drawings/{drawing_path_2}' if not drawing_path_2.startswith('drawings/') else drawing_path_2
-                    try:
-                        cursor.execute(
-                            "INSERT INTO products (product_name, drawing_number, drawing_path, drawing_path_2) VALUES (?, ?, ?, ?)",
-                            (product_name, drawing_number, drawing_path, drawing_path_2)
-                        )
-                        product_id = cursor.lastrowid
-                        # Automatically create a mold for the new product
-                        mold_name = f"Mold for {product_name}"
-                        mold_number = f"M{product_id:04d}"
-                        current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        cursor.execute(
-                            "INSERT INTO molds (product_id, mold_name, mold_number, created_date) VALUES (?, ?, ?, ?)",
-                            (product_id, mold_name, mold_number, current_date)
-                        )
-                        conn.commit()
-                        flash('Продуктът и неговата матрица са добавени успешно', 'success')
-                    except sqlite3.IntegrityError:
-                        flash('Продукт с това име и номер на чертеж вече съществува', 'error')
+                    # Check for case-insensitive duplicates before inserting (with whitespace trimming)
+                    cursor.execute(
+                        "SELECT id, product_name, drawing_number FROM products WHERE LOWER(TRIM(product_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(drawing_number)) = LOWER(TRIM(?))",
+                        (product_name, drawing_number)
+                    )
+                    existing_product = cursor.fetchone()
+                    
+                    if existing_product:
+                        error_msg = f'Дублиран продукт! Продукт с това име и номер на чертеж вече съществува: "{existing_product["product_name"]}" с номер "{existing_product["drawing_number"]}"'
+                        flash(error_msg, 'error')
+                        logger.warning(f"Duplicate product attempt blocked: {product_name} with drawing {drawing_number} (existing: {existing_product['product_name']} with {existing_product['drawing_number']})")
+                    else:
+                        # Normalize drawing_path
+                        if drawing_path and not drawing_path.startswith('http'):
+                            drawing_path = f'drawings/{drawing_path}' if not drawing_path.startswith('drawings/') else drawing_path
+                        if drawing_path_2 and not drawing_path_2.startswith('http'):
+                            drawing_path_2 = f'drawings/{drawing_path_2}' if not drawing_path_2.startswith('drawings/') else drawing_path_2
+                        try:
+                            cursor.execute(
+                                "INSERT INTO products (product_name, drawing_number, drawing_path, drawing_path_2) VALUES (?, ?, ?, ?)",
+                                (product_name, drawing_number, drawing_path, drawing_path_2)
+                            )
+                            product_id = cursor.lastrowid
+                            # Automatically create a mold for the new product
+                            mold_name = f"Mold for {product_name}"
+                            mold_number = f"M{product_id:04d}"
+                            current_date = get_bulgarian_time_string()
+                            cursor.execute(
+                                "INSERT INTO molds (product_id, mold_name, mold_number, created_date) VALUES (?, ?, ?, ?)",
+                                (product_id, mold_name, mold_number, current_date)
+                            )
+                            conn.commit()
+                            flash('Продуктът и неговата матрица са добавени успешно', 'success')
+                            logger.info(f"New product created: {product_name} with drawing number: {drawing_number}")
+                        except sqlite3.IntegrityError:
+                            flash('Продукт с това име и номер на чертеж вече съществува', 'error')
             elif action == 'delete_product':
                 product_id = request.form['product_id']
                 cursor.execute("DELETE FROM measurements WHERE dimension_id IN (SELECT id FROM dimensions WHERE product_id=?)", (product_id,))
@@ -413,9 +477,46 @@ def products():
                 cursor.execute("DELETE FROM products WHERE id=?", (product_id,))
                 conn.commit()
                 flash('Продуктът е изтрит успешно', 'success')
-        cursor.execute("SELECT id, product_name, drawing_number, drawing_path, drawing_path_2, comments FROM products")
-        products = cursor.fetchall()
-    return render_template('products.html', products=products, role=session.get('role'))
+                
+        # After POST operations, recalculate products with pagination
+        if request.method == 'POST':
+            # Build search query again after POST
+            if search:
+                search_pattern = f"%{search}%"
+                count_query = "SELECT COUNT(*) FROM products WHERE product_name LIKE ? OR drawing_number LIKE ? OR comments LIKE ?"
+                products_query = """SELECT id, product_name, drawing_number, drawing_path, drawing_path_2, comments 
+                                   FROM products 
+                                   WHERE product_name LIKE ? OR drawing_number LIKE ? OR comments LIKE ?
+                                   ORDER BY product_name 
+                                   LIMIT ? OFFSET ?"""
+                cursor.execute(count_query, (search_pattern, search_pattern, search_pattern))
+                total = cursor.fetchone()[0]
+                
+                offset = (page - 1) * per_page
+                cursor.execute(products_query, (search_pattern, search_pattern, search_pattern, per_page, offset))
+                products = cursor.fetchall()
+            else:
+                cursor.execute("SELECT COUNT(*) FROM products")
+                total = cursor.fetchone()[0]
+                
+                offset = (page - 1) * per_page
+                cursor.execute("SELECT id, product_name, drawing_number, drawing_path, drawing_path_2, comments FROM products ORDER BY product_name LIMIT ? OFFSET ?", (per_page, offset))
+                products = cursor.fetchall()
+            
+            # Recalculate pagination info
+            total_pages = (total + per_page - 1) // per_page
+            has_prev = page > 1
+            has_next = page < total_pages
+            
+    return render_template('products.html', 
+                         products=products, 
+                         role=session.get('role'),
+                         page=page,
+                         total_pages=total_pages,
+                         has_prev=has_prev,
+                         has_next=has_next,
+                         search=search,
+                         total=total)
 
 @app.route('/get_dimensions/<int:product_id>')
 def get_dimensions(product_id):
@@ -576,7 +677,7 @@ def measurements():
         cursor = conn.cursor()
         cursor.execute("SELECT id, product_name, drawing_path, drawing_path_2, comments FROM products")
         products = [dict(row) for row in cursor.fetchall()]
-        current_date = datetime.now().strftime('%d-%m-%Y')
+        current_date = get_bulgarian_time().strftime('%d-%m-%Y')
         if request.method == 'POST':
             product_id = int(request.form['product_id'])
             machine_number = request.form['machine_number']
@@ -588,7 +689,7 @@ def measurements():
                 return render_template('measurements.html', products=products, role=session.get('role'), current_date=current_date)
             try:
                 iso_date = datetime.strptime(measurement_date, "%d-%m-%Y").strftime("%Y-%m-%d")
-                iso_date = f"{iso_date} {datetime.now().strftime('%H:%M:%S')}"
+                iso_date = f"{iso_date} {get_bulgarian_time().strftime('%H:%M:%S')}"
             except ValueError:
                 flash('Невалиден формат на датата (използвайте ДД-ММ-ГГГГ)', 'error')
                 return render_template('measurements.html', products=products, role=session.get('role'), current_date=current_date)
@@ -613,16 +714,50 @@ def measurements():
             if not measurements:
                 flash('Няма въведени измервания', 'error')
             else:
+                # Generate unique submission ID to prevent duplicates
+                submission_id = f"{product_id}_{machine_number}_{iso_date.replace(' ', '_').replace(':', '')}_{uuid.uuid4().hex[:8]}"
+                
+                # Check if measurements with similar parameters already exist (duplicate prevention)
+                cursor.execute("""
+                    SELECT COUNT(*) FROM measurements 
+                    WHERE product_id = ? AND machine_number = ? AND date(measurement_date) = date(?) AND inspector = ?
+                """, (product_id, machine_number, iso_date, session['user']))
+                existing_count = cursor.fetchone()[0]
+                
+                if existing_count > 0:
+                    # Check if this might be a duplicate submission
+                    cursor.execute("""
+                        SELECT measurement_date FROM measurements 
+                        WHERE product_id = ? AND machine_number = ? AND date(measurement_date) = date(?) AND inspector = ?
+                        ORDER BY measurement_date DESC LIMIT 1
+                    """, (product_id, machine_number, iso_date, session['user']))
+                    last_measurement = cursor.fetchone()
+                    
+                    if last_measurement:
+                        last_time = datetime.strptime(last_measurement[0], "%Y-%m-%d %H:%M:%S")
+                        current_time = datetime.strptime(iso_date, "%Y-%m-%d %H:%M:%S")
+                        time_diff = (current_time - last_time).total_seconds()
+                        
+                        # If last measurement was within 5 minutes, likely a duplicate
+                        if time_diff < 300:  # 5 minutes
+                            flash('Възможно дублиране! Измервания за този продукт, машина и дата вече са записани преди малко. Моля, проверете дали не се опитвате да запишете същите данни отново.', 'warning')
+                            return render_template('measurements.html', products=products, role=session.get('role'), current_date=current_date)
+                
+                # Add submission_id to each measurement
+                measurements_with_id = []
+                for measurement in measurements:
+                    measurements_with_id.append(measurement + (submission_id,))
+                
                 # 1. Check last product for this machine
                 cursor.execute("SELECT last_product_id, last_count FROM machine_last_product WHERE machine_number=?", (machine_number,))
                 last_row = cursor.fetchone()
                 if last_row and last_row['last_product_id'] is not None and last_row['last_product_id'] != product_id:
                     # Add last_count to the previous product's mold cycle count
                     cursor.execute("UPDATE molds SET total_cycles = total_cycles + ? WHERE product_id = ?", (last_row['last_count'], last_row['last_product_id']))
-                # 2. Insert measurements
+                # 2. Insert measurements with submission_id
                 cursor.executemany(
-                    "INSERT INTO measurements (product_id, dimension_id, measured_value, measurement_date, machine_number, count, inspector, shift) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    measurements
+                    "INSERT INTO measurements (product_id, dimension_id, measured_value, measurement_date, machine_number, count, inspector, shift, submission_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    measurements_with_id
                 )
                 # 3. Update machine_last_product
                 # Get the last inserted measurement id
@@ -971,25 +1106,153 @@ def users():
         users = [dict(row) for row in cursor.fetchall()]
     return render_template('users.html', users=users, role=session.get('role'))
 
-@app.route('/upload_drawing', methods=['POST'])
-def upload_drawing():
+@app.route('/tolerance_tables', methods=['GET', 'POST'])
+def tolerance_tables():
     # Check if user is admin
     if session.get('role') != 'admin':
-        return jsonify({'status': 'error', 'message': 'Достъп отказан. Необходими са администраторски права.'})
+        flash('Достъп отказан. Необходими са администраторски права.', 'error')
+        return redirect(url_for('dashboard'))
+    
+    # Get pagination parameters
+    page = request.args.get('page', 1, type=int)
+    per_page = 50  # Files per page
+    
+    # Directory for tolerance tables
+    tolerance_dir = os.path.join('static', 'tolerance_tables')
+    os.makedirs(tolerance_dir, exist_ok=True)
+    
+    # Get all PDF files in the tolerance_tables directory
+    pdf_files = []
+    if os.path.exists(tolerance_dir):
+        pdf_files = [f for f in os.listdir(tolerance_dir) if f.lower().endswith('.pdf')]
+        pdf_files.sort()  # Sort alphabetically
+    
+    # Calculate pagination
+    total = len(pdf_files)
+    total_pages = (total + per_page - 1) // per_page
+    has_prev = page > 1
+    has_next = page < total_pages
+    
+    # Get files for current page
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_files = pdf_files[start_idx:end_idx]
+    
+    # Handle file upload
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        if action == 'upload_tolerance':
+            if 'tolerance_file' not in request.files:
+                flash('Няма избран файл', 'error')
+            else:
+                file = request.files['tolerance_file']
+                if file.filename == '':
+                    flash('Няма избран файл', 'error')
+                elif not file.filename.lower().endswith('.pdf'):
+                    flash('Позволени са само PDF файлове', 'error')
+                else:
+                    # Check file size (max 50MB for tolerance tables)
+                    file.seek(0, 2)
+                    file_size = file.tell()
+                    file.seek(0)
+                    if file_size > 50 * 1024 * 1024:
+                        flash('Размерът на файла трябва да е по-малък от 50MB', 'error')
+                    else:
+                        # Generate safe filename
+                        filename = secure_filename(file.filename)
+                        # Add timestamp to avoid conflicts
+                        name, ext = os.path.splitext(filename)
+                        timestamp = get_bulgarian_time().strftime('%Y%m%d_%H%M%S')
+                        safe_filename = f"{name}_{timestamp}{ext}"
+                        
+                        file_path = os.path.join(tolerance_dir, safe_filename)
+                        try:
+                            file.save(file_path)
+                            flash(f'Таблицата с допуски "{filename}" е качена успешно', 'success')
+                            logger.info(f"Tolerance table uploaded: {safe_filename}")
+                        except Exception as e:
+                            flash('Грешка при запис на файла', 'error')
+                            logger.error(f"Error uploading tolerance table: {e}")
+        
+        elif action == 'delete_tolerance':
+            filename = request.form.get('filename')
+            if filename:
+                file_path = os.path.join(tolerance_dir, filename)
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        flash(f'Таблицата с допуски "{filename}" е изтрита успешно', 'success')
+                        logger.info(f"Tolerance table deleted: {filename}")
+                    except Exception as e:
+                        flash('Грешка при изтриване на файла', 'error')
+                        logger.error(f"Error deleting tolerance table: {e}")
+                else:
+                    flash('Файлът не съществува', 'error')
+        
+        # Redirect to avoid form resubmission
+        return redirect(url_for('tolerance_tables', page=page))
+    
+    return render_template('tolerance_tables.html',
+                         files=paginated_files,
+                         role=session.get('role'),
+                         page=page,
+                         total_pages=total_pages,
+                         has_prev=has_prev,
+                         has_next=has_next,
+                         total=total)
+
+@app.route('/view_tolerance_table/<filename>')
+def view_tolerance_table(filename):
+    tolerance_dir = os.path.join('static', 'tolerance_tables')
+    file_path = os.path.join(tolerance_dir, filename)
+    
+    if not os.path.exists(file_path):
+        flash('Файлът не съществува', 'error')
+        return redirect(url_for('tolerance_tables'))
+    
+    try:
+        return send_file(file_path, as_attachment=False, mimetype='application/pdf')
+    except Exception as e:
+        logger.error(f"Error serving tolerance table: {e}")
+        flash('Грешка при зареждане на файла', 'error')
+        return redirect(url_for('tolerance_tables'))
+
+@app.route('/upload_drawing', methods=['POST'])
+def upload_drawing():
+    logger.info("Upload drawing request received")
+    # Check if user is admin
+    if session.get('role') != 'admin':
+        logger.warning("Upload drawing: Access denied - not admin")
+        response = jsonify({'status': 'error', 'message': 'Access denied. Admin rights required.'})
+        response.headers['Content-Type'] = 'application/json'
+        return response
     
     # Check if file was uploaded
     if 'drawing_file' not in request.files:
-        return jsonify({'status': 'error', 'message': 'Няма избран файл'})
+        response = jsonify({'status': 'error', 'message': 'No file selected'})
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    
     file = request.files['drawing_file']
     if not file or not hasattr(file, 'filename') or file.filename is None or file.filename == '':
-        return jsonify({'status': 'error', 'message': 'Няма избран файл'})
+        response = jsonify({'status': 'error', 'message': 'No file selected'})
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    
     if not str(file.filename).lower().endswith('.pdf'):
-        return jsonify({'status': 'error', 'message': 'Позволени са само PDF файлове'})
-    file.seek(0, 2)
+        response = jsonify({'status': 'error', 'message': 'Only PDF files are allowed'})
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    
+    # Check file size without consuming the file stream
+    file.seek(0, 2)  # Seek to end
     file_size = file.tell()
-    file.seek(0)
+    file.seek(0)  # Reset to beginning
     if file_size > 10 * 1024 * 1024:
-        return jsonify({'status': 'error', 'message': 'Размерът на файла трябва да е по-малък от 10MB'})
+        response = jsonify({'status': 'error', 'message': 'File size must be less than 10MB'})
+        response.headers['Content-Type'] = 'application/json'
+        return response
     original_name = os.path.splitext(secure_filename(str(file.filename)))[0]
     unique_filename = f"{original_name}_{uuid.uuid4().hex[:8]}.pdf"
     drawings_dir = os.path.join('static', 'drawings')
@@ -998,14 +1261,22 @@ def upload_drawing():
     try:
         file.save(file_path)
         logger.info(f"Drawing uploaded successfully: {unique_filename}")
-        return jsonify({
+        response_data = {
             'status': 'success', 
-            'message': 'Чертежът е качен успешно',
+            'message': 'Drawing uploaded successfully',
             'filename': unique_filename
-        })
+        }
+        logger.info(f"Sending response: {response_data}")
+        response = jsonify(response_data)
+        response.headers['Content-Type'] = 'application/json'
+        return response
     except Exception as e:
         logger.error(f"Error saving file: {e}")
-        return jsonify({'status': 'error', 'message': 'Грешка при запис на файла'})
+        error_response = {'status': 'error', 'message': 'Error saving file'}
+        logger.info(f"Sending error response: {error_response}")
+        response = jsonify(error_response)
+        response.headers['Content-Type'] = 'application/json'
+        return response
 
 @app.route('/delete_drawing', methods=['POST'])
 def delete_drawing():
@@ -1069,6 +1340,82 @@ def replace_drawing():
     except Exception as e:
         logger.error(f"Error replacing drawing: {e}")
         return jsonify({'status': 'error', 'message': 'Грешка при запис на файла', 'slot': drawing_slot})
+
+@app.route('/add_drawing_to_product', methods=['POST'])
+def add_drawing_to_product():
+    # Check if user is admin
+    if session.get('role') != 'admin':
+        return jsonify({'status': 'error', 'message': 'Достъп отказан. Необходими са администраторски права.'})
+    
+    product_id = request.form.get('product_id')
+    drawing_slot = int(request.form.get('drawing_slot', 1))
+    
+    if not product_id:
+        return jsonify({'status': 'error', 'message': 'Липсва ID на продукта'})
+    
+    # Check if file was uploaded
+    if 'drawing_file' not in request.files:
+        return jsonify({'status': 'error', 'message': 'Няма избран файл'})
+    
+    file = request.files['drawing_file']
+    if not file or not hasattr(file, 'filename') or file.filename is None or file.filename == '':
+        return jsonify({'status': 'error', 'message': 'Няма избран файл'})
+    
+    if not str(file.filename).lower().endswith('.pdf'):
+        return jsonify({'status': 'error', 'message': 'Позволени са само PDF файлове'})
+    
+    # Check file size
+    file.seek(0, 2)
+    file_size = file.tell()
+    file.seek(0)
+    if file_size > 10 * 1024 * 1024:
+        return jsonify({'status': 'error', 'message': 'Размерът на файла трябва да е по-малък от 10MB'})
+    
+    # Generate unique filename
+    original_name = os.path.splitext(secure_filename(str(file.filename)))[0]
+    unique_filename = f"{original_name}_{uuid.uuid4().hex[:8]}.pdf"
+    drawings_dir = os.path.join('static', 'drawings')
+    os.makedirs(drawings_dir, exist_ok=True)
+    file_path = os.path.join(drawings_dir, unique_filename)
+    
+    try:
+        # Save the file
+        file.save(file_path)
+        
+        # Update the database
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Check if the product exists
+            cursor.execute("SELECT id FROM products WHERE id=?", (product_id,))
+            if not cursor.fetchone():
+                # Clean up uploaded file if product doesn't exist
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                return jsonify({'status': 'error', 'message': 'Продуктът не съществува'})
+            
+            # Update the appropriate drawing slot
+            if drawing_slot == 2:
+                cursor.execute("UPDATE products SET drawing_path_2=? WHERE id=?", (f'drawings/{unique_filename}', product_id))
+            else:
+                cursor.execute("UPDATE products SET drawing_path=? WHERE id=?", (f'drawings/{unique_filename}', product_id))
+            
+            conn.commit()
+        
+        logger.info(f"Drawing added to product {product_id}: {unique_filename}")
+        return jsonify({
+            'status': 'success', 
+            'message': 'Чертежът е добавен успешно',
+            'filename': unique_filename,
+            'slot': drawing_slot
+        })
+    
+    except Exception as e:
+        logger.error(f"Error adding drawing to product: {e}")
+        # Clean up uploaded file if database operation fails
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        return jsonify({'status': 'error', 'message': 'Грешка при добавяне на чертежа'})
 
 @app.route('/recent_measurements')
 def recent_measurements():
@@ -1431,8 +1778,24 @@ def delete_mold_problem():
 
 @app.route('/molds_dashboard')
 def molds_dashboard():
+    # Get pagination parameters only (keep existing filter system)
+    page = request.args.get('page', 1, type=int)
+    per_page = 50  # Molds per page
+    
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        
+        # Get total count for pagination
+        cursor.execute("SELECT COUNT(DISTINCT m.id) FROM molds m")
+        total = cursor.fetchone()[0]
+        
+        # Calculate pagination info
+        total_pages = (total + per_page - 1) // per_page
+        has_prev = page > 1
+        has_next = page < total_pages
+        offset = (page - 1) * per_page
+        
+        # Get molds with pagination
         cursor.execute('''
         SELECT m.id, m.mold_name, m.mold_number, m.total_cycles, m.maintenance_threshold, 
                m.last_maintenance_date, m.status, m.created_date, m.specifications_pdf, p.product_name,
@@ -1443,7 +1806,8 @@ def molds_dashboard():
         GROUP BY m.id, m.mold_name, m.mold_number, m.total_cycles, m.maintenance_threshold, 
                  m.last_maintenance_date, m.status, m.created_date, m.specifications_pdf, p.product_name
         ORDER BY m.created_date DESC
-        ''')
+        LIMIT ? OFFSET ?
+        ''', (per_page, offset))
         molds = [dict(row) for row in cursor.fetchall()]
         
         # Get current machine-mold assignments
@@ -1502,7 +1866,12 @@ def molds_dashboard():
                          machine_assignments=machine_assignments,
                          recent_activity=recent_activity,
                          recent_problems=recent_problems,
-                         role=session.get('role'))
+                         role=session.get('role'),
+                         page=page,
+                         total_pages=total_pages,
+                         has_prev=has_prev,
+                         has_next=has_next,
+                         total=total)
 
 @app.route('/get_mold_problems/<int:mold_id>')
 def get_mold_problems(mold_id):

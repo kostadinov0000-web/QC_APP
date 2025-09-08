@@ -561,5 +561,136 @@ function loadProductComments(productId) {
             commentsContainer.classList.remove('hidden');
         });
 }
+
+// Offline storage and robust submission handling
+let isSubmitting = false;
+const STORAGE_KEY = 'pending_measurements';
+
+// Save measurements to local storage
+function saveMeasurementsLocally(formData) {
+    const measurements = {
+        timestamp: new Date().toISOString(),
+        data: Object.fromEntries(formData.entries()),
+        id: Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+    };
+    
+    let pending = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    pending.push(measurements);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+    
+    console.log('Measurements saved locally:', measurements);
+    return measurements.id;
+}
+
+// Remove measurements from local storage
+function removeMeasurementsLocally(id) {
+    let pending = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    pending = pending.filter(m => m.id !== id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
+}
+
+// Check for pending measurements and retry
+function retryPendingMeasurements() {
+    const pending = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    
+    if (pending.length > 0) {
+        console.log('Found', pending.length, 'pending measurements, retrying...');
+        
+        pending.forEach(async (measurement, index) => {
+            try {
+                const formData = new FormData();
+                Object.entries(measurement.data).forEach(([key, value]) => {
+                    formData.append(key, value);
+                });
+                
+                const response = await fetch('/measurements', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    removeMeasurementsLocally(measurement.id);
+                    showToast('Запазени измервания са изпратени успешно!', 'success');
+                    console.log('Retry successful for measurement:', measurement.id);
+                }
+            } catch (error) {
+                console.log('Retry failed for measurement:', measurement.id, error);
+            }
+        });
+    }
+}
+
+// Enhanced form submission with offline support
+document.addEventListener('DOMContentLoaded', function() {
+    const measurementForm = document.querySelector('form[action="/measurements"]');
+    
+    if (measurementForm) {
+        measurementForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            if (isSubmitting) {
+                showToast('Измерванията се обработват, моля изчакайте...', 'warning');
+                return;
+            }
+            
+            isSubmitting = true;
+            const formData = new FormData(this);
+            const submitButton = this.querySelector('button[type="submit"]');
+            const originalButtonText = submitButton.textContent;
+            
+            // Update button to show processing
+            submitButton.disabled = true;
+            submitButton.textContent = 'Запазване...';
+            
+            // Save locally first (offline backup)
+            const localId = saveMeasurementsLocally(formData);
+            
+            // Attempt to submit
+            fetch('/measurements', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.text();
+            })
+            .then(html => {
+                // Success - remove from local storage
+                removeMeasurementsLocally(localId);
+                showToast('Измерванията са запазени успешно!', 'success');
+                
+                // Reset form
+                measurementForm.reset();
+                document.getElementById('measurementsTable').querySelector('tbody').innerHTML = '';
+                document.getElementById('selectedProduct').textContent = '';
+                document.getElementById('productComments').classList.add('hidden');
+                document.getElementById('drawingContainer').classList.add('hidden');
+                
+                console.log('Measurements submitted successfully');
+            })
+            .catch(error => {
+                console.error('Submission failed:', error);
+                showToast('Слаба връзка! Измерванията са запазени локално и ще бъдат изпратени автоматично.', 'warning');
+                
+                // Don't remove from local storage - keep for retry
+                console.log('Measurements saved locally due to connection issue');
+            })
+            .finally(() => {
+                // Reset button state
+                submitButton.disabled = false;
+                submitButton.textContent = originalButtonText;
+                isSubmitting = false;
+            });
+        });
+    }
+    
+    // Check for pending measurements on page load
+    retryPendingMeasurements();
+    
+    // Periodically retry pending measurements
+    setInterval(retryPendingMeasurements, 30000); // Every 30 seconds
+});
 </script>
 {% endblock %}

@@ -46,11 +46,42 @@
     <link href="{{ url_for('static', filename='css/output.css') }}" rel="stylesheet">
     <script>
         function showToast(message, type) {
-            const toast = document.createElement('div');
-            toast.className = `fixed top-4 right-4 p-4 rounded shadow-lg text-white ${type === 'success' ? 'bg-green-500' : type === 'warning' ? 'bg-yellow-500' : 'bg-red-500'}`;
-            toast.innerText = message;
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 5000);
+            console.log('showToast called:', message, type);
+            
+            // Ensure DOM is ready before creating toast
+            function createToast() {
+                try {
+                    if (!document.body) {
+                        console.log('Document body not ready, retrying...');
+                        setTimeout(createToast, 100);
+                        return;
+                    }
+                    
+                    const toast = document.createElement('div');
+                    toast.className = `fixed top-4 right-4 p-4 rounded shadow-lg text-white z-50 ${type === 'success' ? 'bg-green-500' : type === 'warning' ? 'bg-yellow-500' : 'bg-red-500'}`;
+                    toast.innerHTML = message; // Use innerHTML to handle HTML entities
+                    toast.style.zIndex = '9999';
+                    toast.style.maxWidth = '400px';
+                    toast.style.wordWrap = 'break-word';
+                    document.body.appendChild(toast);
+                    console.log('Toast added to body:', toast);
+                    
+                    setTimeout(() => {
+                        if (toast.parentNode) {
+                            toast.remove();
+                            console.log('Toast removed');
+                        }
+                    }, 8000); // Show longer for error messages
+                } catch (error) {
+                    console.error('Error creating toast:', error);
+                    // Fallback to alert for critical error messages
+                    if (type === 'error') {
+                        alert(message.replace(/&#34;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
+                    }
+                }
+            }
+            
+            createToast();
         }
         
         // Session timeout management
@@ -98,44 +129,129 @@
         });
         {% endif %}
         
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    showToast('{{ message }}', '{{ category }}');
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
+        // Process flash messages after DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    console.log('Flash messages found:', {{ messages|length }});
+                    {% for category, message in messages %}
+                        console.log('Processing flash message:', '{{ category }}', '{{ message }}');
+                        showToast('{{ message|e }}', '{{ category }}');
+                    {% endfor %}
+                {% else %}
+                    console.log('No flash messages found');
+                {% endif %}
+            {% endwith %}
+        });
+        
+        // Mobile menu toggle functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+            
+            if (mobileMenuButton && mobileMenu) {
+                mobileMenuButton.addEventListener('click', function() {
+                    mobileMenu.classList.toggle('hidden');
+                });
+                
+                // Close mobile menu when clicking outside
+                document.addEventListener('click', function(event) {
+                    if (!mobileMenuButton.contains(event.target) && !mobileMenu.contains(event.target)) {
+                        mobileMenu.classList.add('hidden');
+                    }
+                });
+                
+                // Close mobile menu when window is resized to desktop size
+                window.addEventListener('resize', function() {
+                    if (window.innerWidth >= 768) { // md breakpoint
+                        mobileMenu.classList.add('hidden');
+                    }
+                });
+            }
+        });
     </script>
 </head>
 <body class="bg-gray-100 font-sans">
     {% if 'user' in session %}
-    <nav class="bg-blue-600 p-4 flex items-center justify-between">
-        <div class="flex items-center gap-x-10">
-            <a href="/" class="text-red-600 text-lg font-bold whitespace-nowrap" style="text-shadow: 1px 1px 0 #fff, -1px 1px 0 #fff, 1px -1px 0 #fff, -1px -1px 0 #fff;">Контрол на качеството</a>
-            <a href="/molds_dashboard" class="text-green-600 text-lg font-bold px-4 py-2 hover:text-green-700 transition-colors" style="text-shadow: 1px 1px 0 #fff, -1px 1px 0 #fff, 1px -1px 0 #fff, -1px -1px 0 #fff;">Матрици</a>
+    <nav class="bg-blue-600 p-4">
+        <!-- Desktop Navigation -->
+        <div class="hidden md:flex items-center justify-between">
+            <div class="flex items-center gap-x-10">
+                <a href="/" class="text-red-600 text-lg font-bold whitespace-nowrap" style="text-shadow: 1px 1px 0 #fff, -1px 1px 0 #fff, 1px -1px 0 #fff, -1px -1px 0 #fff;">Контрол на качеството</a>
+                <a href="/molds_dashboard" class="text-green-600 text-lg font-bold px-4 py-2 hover:text-green-700 transition-colors" style="text-shadow: 1px 1px 0 #fff, -1px 1px 0 #fff, 1px -1px 0 #fff, -1px -1px 0 #fff;">Матрици</a>
+            </div>
+            <div class="flex items-center gap-x-6">
+                {% if request.endpoint not in ['molds_dashboard', 'mold_detail'] %}
+                    {% if session['role'] == 'admin' %}
+                    <a href="{{ url_for('products') }}" class="text-white text-lg hover:underline px-2">Продукти</a>
+                    {% endif %}
+                    <a href="{{ url_for('measurements') }}" class="text-white text-lg hover:underline px-2">Измервания</a>
+                    <a href="{{ url_for('recent_measurements') }}" class="text-white text-lg hover:underline px-2">Последни измервания</a>
+                    <a href="{{ url_for('tolerance_tables') }}" class="text-white text-lg hover:underline px-2">Таблица с допуски</a>
+                    <a href="{{ url_for('reports') }}" class="text-white text-lg hover:underline px-2">Справки</a>
+                    {% if session['role'] == 'admin' %}
+                    <a href="{{ url_for('users') }}" class="text-white text-lg hover:underline px-2">Потребители</a>
+                    {% endif %}
+                {% endif %}
+                <span class="text-white text-lg px-2">{{ session.get('user') }}</span>
+                {% if session.get('user') %}
+                <a href="{{ url_for('logout') }}" class="text-white px-2 cursor-pointer hover:text-red-400 flex items-center" title="Изход">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16,17 21,12 16,7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                </a>
+                {% endif %}
+            </div>
         </div>
-        <div class="flex items-center gap-x-6">
-            {% if request.endpoint not in ['molds_dashboard', 'mold_detail'] %}
-                {% if session['role'] == 'admin' %}
-                <a href="{{ url_for('products') }}" class="text-white text-lg hover:underline px-2">Продукти</a>
-                {% endif %}
-                <a href="{{ url_for('measurements') }}" class="text-white text-lg hover:underline px-2">Измервания</a>
-                <a href="{{ url_for('recent_measurements') }}" class="text-white text-lg hover:underline px-2">Последни измервания</a>
-                <a href="{{ url_for('reports') }}" class="text-white text-lg hover:underline px-2">Справки</a>
-                {% if session['role'] == 'admin' %}
-                <a href="{{ url_for('users') }}" class="text-white text-lg hover:underline px-2">Потребители</a>
-                {% endif %}
-            {% endif %}
-            <span class="text-white text-lg px-2">{{ session.get('user') }}</span>
-            {% if session.get('user') %}
-            <a href="{{ url_for('logout') }}" class="text-white px-2 cursor-pointer hover:text-red-400 flex items-center" title="Изход">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                    <polyline points="16,17 21,12 16,7"/>
-                    <line x1="21" y1="12" x2="9" y2="12"/>
-                </svg>
-            </a>
-            {% endif %}
+
+        <!-- Mobile Navigation -->
+        <div class="md:hidden">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <a href="/" class="text-red-600 text-lg font-bold whitespace-nowrap" style="text-shadow: 1px 1px 0 #fff, -1px 1px 0 #fff, 1px -1px 0 #fff, -1px -1px 0 #fff;">Контрол на качеството</a>
+                </div>
+                <div class="flex items-center gap-x-4">
+                    <span class="text-white text-sm">{{ session.get('user') }}</span>
+                    <button id="mobile-menu-button" class="text-white hover:text-gray-200 focus:outline-none">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Mobile Menu Dropdown -->
+            <div id="mobile-menu" class="hidden mt-4 bg-blue-700 rounded-lg shadow-lg">
+                <div class="px-4 py-2 space-y-2">
+                    <a href="/molds_dashboard" class="block text-green-400 text-lg font-bold py-2 hover:text-green-300 transition-colors" style="text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;">Матрици</a>
+                    {% if request.endpoint not in ['molds_dashboard', 'mold_detail'] %}
+                        {% if session['role'] == 'admin' %}
+                        <a href="{{ url_for('products') }}" class="block text-white text-lg hover:text-gray-200 py-2">Продукти</a>
+                        {% endif %}
+                        <a href="{{ url_for('measurements') }}" class="block text-white text-lg hover:text-gray-200 py-2">Измервания</a>
+                        <a href="{{ url_for('recent_measurements') }}" class="block text-white text-lg hover:text-gray-200 py-2">Последни измервания</a>
+                        <a href="{{ url_for('tolerance_tables') }}" class="block text-white text-lg hover:text-gray-200 py-2">Таблица с допуски</a>
+                        <a href="{{ url_for('reports') }}" class="block text-white text-lg hover:text-gray-200 py-2">Справки</a>
+                        {% if session['role'] == 'admin' %}
+                        <a href="{{ url_for('users') }}" class="block text-white text-lg hover:text-gray-200 py-2">Потребители</a>
+                        {% endif %}
+                    {% endif %}
+                    <div class="border-t border-blue-500 pt-2 mt-2">
+                        {% if session.get('user') %}
+                        <a href="{{ url_for('logout') }}" class="flex items-center text-white hover:text-red-400 py-2">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                                <polyline points="16,17 21,12 16,7"/>
+                                <line x1="21" y1="12" x2="9" y2="12"/>
+                            </svg>
+                            Изход
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
         </div>
     </nav>
     {% endif %}
